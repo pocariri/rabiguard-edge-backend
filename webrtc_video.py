@@ -6,7 +6,7 @@ from av import VideoFrame
 from firebase_admin import credentials, db, initialize_app
 import numpy as np
 
-# 1. 초기화
+## 1. 초기화
 cred = credentials.Certificate("/home/rafour/workspace/seungmin/rafour-app/serviceAccountKey.json")
 initialize_app(cred, {'databaseURL': 'https://rafour-7f37f-default-rtdb.asia-southeast1.firebasedatabase.app/'})
 
