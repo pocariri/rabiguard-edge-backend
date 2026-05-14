@@ -20,13 +20,16 @@ hailo-apps/*
 
 # inputs 폴더 설정: inputs 폴더 안의 모든 내용물 무시
 _inputs/*
+inputs/*
 # 단, 폴더 유지를 위한 .gitkeep 파일은 예외 처리(!)
 !_inputs/.gitkeep
-
+!inputs/.gitkeep
 # outputs 폴더 설정: utputs 폴더 안의 모든 내용물 무시
 _outputs/*
+outputs/*
 # 단, 폴더 유지를 위한 .gitkeep 파일은 예외 처리(!)
 !_outputs/.gitkeep
+!outputs/.gitkeep
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
