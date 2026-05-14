@@ -1,0 +1,12 @@
+air conditioner
+blackboard
+cabinet
+closet
+door
+heater
+playground
+school bus
+shelf
+stairs
+whiteboard
+window

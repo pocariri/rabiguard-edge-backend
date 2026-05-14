@@ -1,0 +1,11 @@
+air conditioner
+atm
+cabinet
+closet
+convenience store
+counter
+display window
+door
+heater
+shelf
+window

@@ -1,0 +1,10 @@
+air conditioner
+cabinet
+closet
+counter
+door
+heater
+shelf
+sink
+table
+window

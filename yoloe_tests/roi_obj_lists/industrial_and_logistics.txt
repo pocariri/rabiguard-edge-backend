@@ -1,0 +1,14 @@
+air conditioner
+cabinet
+closet
+container
+door
+factory
+fence
+forklift
+heater
+machine
+shelf
+truck
+warehouse
+window

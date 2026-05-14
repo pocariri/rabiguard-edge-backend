@@ -1,0 +1,13 @@
+air conditioner
+armchair
+bed
+cabinet
+closet
+couch
+door
+heater
+shelf
+shower
+stairs
+table
+window
