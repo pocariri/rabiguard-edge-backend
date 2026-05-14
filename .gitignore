@@ -7,6 +7,7 @@ _ignore/*
 
 # 보안 파일
 serviceAccountKey.json
+firebase_key.json
 
 # 가상 환경
 venv_hailo_apps/
@@ -200,4 +201,3 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
->>>>>>> 5bd5c2ccd173f6b09e2f9b649341547ad9ba2c65
