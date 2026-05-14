@@ -16,7 +16,7 @@ class CameraStreamTrack(VideoStreamTrack):
         super().__init__()
         self.cap = cv2.VideoCapture(0) # 0번 카메라 연결
 
-        # 해상도를 명시적으로 지정하면 스트림이 더 안정적입니다.
+        # 해상도를 명시적으로 지정하면 스트림이 더 안정적
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
