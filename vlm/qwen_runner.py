@@ -11,8 +11,8 @@ from hailo_platform import VDevice
 from hailo_platform.genai import VLM
 
 from prompts import SYSTEM_PROMPT, USER_PROMPT
-
 from translator import translate_to_korean
+from firebase_writer import save_vlm_result_to_firestore
 
 repo_root = None
 for p in Path(__file__).resolve().parents:
@@ -40,8 +40,10 @@ def clean_response(response: str) -> str:
         return ""
 
     text = response
+
     if ". [{'type'" in text:
         text = text.split(". [{'type'")[0]
+
     if "<|im_end|>" in text:
         text = text.split("<|im_end|>")[0]
 
@@ -50,19 +52,43 @@ def clean_response(response: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Qwen VLM Runner")
-    parser.add_argument("--hef-path", type=str, default=None, help="Path to HEF model file")
-    parser.add_argument("--list-models", action="store_true", help="List available models")
+
+    parser.add_argument(
+        "--hef-path",
+        type=str,
+        default=None,
+        help="Path to HEF model file",
+    )
+
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List available models",
+    )
+
     parser.add_argument(
         "--image-path",
         type=str,
-        default="/home/rafour/workspace/jongmin/rafour-app/images/test7.jpg", # 경로 및 이미지 이름
+        default="/home/rafour/workspace/jongmin/rafour-app/images/test6.jpg",
         help="Path to input image file",
+    )
+
+    parser.add_argument(
+        "--collection-name",
+        type=str,
+        default="vlm_results",
+        help="Firestore collection name",
     )
 
     handle_list_models_flag(parser, VLM_CHAT_APP)
     args = parser.parse_args()
 
-    hef_path = resolve_hef_path(args.hef_path, app_name=VLM_CHAT_APP, arch=HAILO10H_ARCH)
+    hef_path = resolve_hef_path(
+        args.hef_path,
+        app_name=VLM_CHAT_APP,
+        arch=HAILO10H_ARCH,
+    )
+
     if hef_path is None:
         logger.error("Failed to resolve HEF path for VLM model.")
         sys.exit(1)
@@ -87,13 +113,21 @@ def main():
         prompt = [
             {
                 "role": "system",
-                "content": [{"type": "text", "text": SYSTEM_PROMPT}],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": SYSTEM_PROMPT,
+                    }
+                ],
             },
             {
                 "role": "user",
                 "content": [
                     {"type": "image"},
-                    {"type": "text", "text": USER_PROMPT},
+                    {
+                        "type": "text",
+                        "text": USER_PROMPT,
+                    },
                 ],
             },
         ]
@@ -102,15 +136,23 @@ def main():
 
         print(f"[3/5] Loading image from: {image_path}")
         image = cv2.imread(str(image_path))
+
         if image is None:
             raise FileNotFoundError(f"Could not load image file: {image_path}")
+
         print(f"✓ Image loaded (size: {image.shape[1]}x{image.shape[0]})")
 
         print("[4/5] Preprocessing image...")
+
         if len(image.shape) == 3 and image.shape[2] == 3:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        image = cv2.resize(image, (336, 336), interpolation=cv2.INTER_LINEAR).astype(np.uint8)
+        image = cv2.resize(
+            image,
+            (336, 336),
+            interpolation=cv2.INTER_LINEAR,
+        ).astype(np.uint8)
+
         print("✓ Image preprocessed (resized to 336x336, converted to RGB)")
 
         print("[5/5] Sending prompt with image to VLM...")
@@ -137,6 +179,22 @@ def main():
         print("-" * 60)
         print(ko_result)
         print("-" * 60)
+
+        print("\nSaving result to Firestore...")
+
+        try:
+            doc_id = save_vlm_result_to_firestore(
+                english_text=result,
+                korean_text=ko_result,
+                image_path=str(image_path),
+                collection_name=args.collection_name,
+            )
+
+            print(f"✓ Firestore saved successfully")
+            print(f"✓ Document ID: {doc_id}")
+
+        except Exception as e:
+            print(f"[Firestore Save Error] {e}")
 
         print("\n✓ Example completed successfully")
 
