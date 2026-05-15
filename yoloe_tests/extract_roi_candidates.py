@@ -4,6 +4,7 @@ import os
 import argparse
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 
 try:
     from ultralytics import YOLOE
@@ -63,7 +64,8 @@ def propose_roi_from_image(image_path, env_name, model_path="yoloe-26n-seg-pf.pt
     # 예측 수행
     results = model.predict(frame, verbose=False)
     
-    proposals_dir = Path(__file__).parent / "proposals"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    proposals_dir = Path(__file__).parent / f"proposals_{timestamp}"
     proposals_dir.mkdir(exist_ok=True)
     
     proposals_info = []
