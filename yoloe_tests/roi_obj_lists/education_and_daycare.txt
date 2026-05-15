@@ -1,6 +1,7 @@
 air conditioner
 blackboard
 cabinet
+chair
 closet
 door
 heater
@@ -8,5 +9,6 @@ playground
 school bus
 shelf
 stairs
+table
 whiteboard
 window
