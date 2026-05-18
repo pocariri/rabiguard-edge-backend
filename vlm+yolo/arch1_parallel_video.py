@@ -155,7 +155,21 @@ def app_callback(element, buffer, user_data):
     depth_map = None
     if len(depth_objs) > 0:
         depth_data = depth_objs[0].get_data()
-        depth_map = np.array(depth_data).reshape((height, width))
+        
+        # HailoDepthMask 객체에서 직접 너비/높이를 가져오는 API가 없으므로 배열 크기로 추론 (scdepthv3: 320x256)
+        # depth_data의 길이는 tensor_width * tensor_height 입니다 (예: 320*256 = 81920)
+        # NPU Tensor 출력 해상도에 맞춰 reshape 후, 프레임 해상도에 맞게 resize
+        depth_array = np.array(depth_data)
+        
+        # 임시로 배열 크기로 해상도 추정 (81920 -> 256, 320)
+        tensor_w, tensor_h = 320, 256
+        if len(depth_array) == tensor_w * tensor_h:
+            depth_map = depth_array.reshape((tensor_h, tensor_w))
+            # OpenCV로 원본 프레임 크기(height, width)에 맞게 확대
+            depth_map = cv2.resize(depth_map, (width, height), interpolation=cv2.INTER_LINEAR)
+        else:
+            print(f"⚠️ 예상치 못한 Depth Tensor 크기: {len(depth_array)}")
+            depth_map = None
     
     # YOLO 추론 (CPU)
     results = user_data.model.track(frame, persist=True, tracker="bytetrack.yaml", classes=[0], verbose=False)
