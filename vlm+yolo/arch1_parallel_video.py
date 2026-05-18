@@ -298,19 +298,44 @@ def main():
     app = GStreamerDepthApp(app_callback, user_data)
     app.video_sink = "fakesink"
     
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        print("\n🛑 사용자에 의해 중단되었습니다.", flush=True)
-        stop_event.set()
-    finally:
-        stop_event.set()
-        print("💾 비디오 저장 객체를 해제합니다...", flush=True)
+    # ----------------------------------------------------
+    # 영상 반복 재생(루프) 방지 및 종료 처리
+    # ----------------------------------------------------
+    def custom_on_eos():
+        print("✅ 영상 처리가 완료되었습니다 (End of Stream). 종료합니다.", flush=True)
+        app.shutdown()
+    
+    app.on_eos = custom_on_eos
+    
+    # ----------------------------------------------------
+    # GStreamer 파이프라인 종료 지연 전에 비디오 저장을 강제 완료하기 위한 훅
+    # ----------------------------------------------------
+    original_shutdown = app.shutdown
+    def custom_shutdown(signum=None, frame=None):
+        print("\n🛑 파이프라인 종료 중... 비디오 저장 객체를 해제합니다.", flush=True)
         if hasattr(user_data, 'video_writer') and user_data.video_writer is not None:
             user_data.video_writer.release()
             print("✅ 비디오 저장 완료: _outputs/output_arch1_video.mp4", flush=True)
+            user_data.video_writer = None
         else:
             print("⚠️ 저장할 비디오 객체가 없습니다.", flush=True)
+        stop_event.set()
+        original_shutdown(signum, frame)
+
+    app.shutdown = custom_shutdown
+    import signal
+    signal.signal(signal.SIGINT, custom_shutdown)
+    
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        if hasattr(user_data, 'video_writer') and user_data.video_writer is not None:
+            user_data.video_writer.release()
+            print("✅ 비디오 저장 완료: _outputs/output_arch1_video.mp4", flush=True)
+            user_data.video_writer = None
         # cv2.destroyAllWindows()
         vlm_thread.join(timeout=2.0)
 
