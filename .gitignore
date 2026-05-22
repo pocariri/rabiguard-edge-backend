@@ -18,6 +18,10 @@ venv_hailo_apps/
 # hailo-apps
 hailo-apps/*
 
+# hailo-app에서 실행할 때 발생하는 로그 파일 무시
+hailort.log
+gstshark_*
+
 # inputs 폴더 설정: inputs 폴더 안의 모든 내용물 무시
 _inputs/*
 inputs/*
