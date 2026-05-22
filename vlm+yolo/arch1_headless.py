@@ -145,6 +145,11 @@ class HeadlessAppCallback(app_callback_class):
         self.last_proc_time = 0
         self.fps_interval = 1.0 / 30.0  # 파이프라인 프레임 레이트 제어
         
+        # 하트비트(FPS 모니터링) 용 변수
+        self.total_frames = 0
+        self.status_start_time = time.time()
+        self.status_frame_count = 0
+        
         # 비동기 YOLO 처리용
         self.tracker_state = {}
         self.yolo_queue = queue.Queue(maxsize=1)
@@ -241,6 +246,16 @@ def app_callback(element, buffer, user_data):
         curr_time = time.time()
         if curr_time - user_data.last_proc_time < user_data.fps_interval: return
         user_data.last_proc_time = curr_time
+
+        # 하트비트 로그 (1초마다 출력)
+        user_data.total_frames += 1
+        user_data.status_frame_count += 1
+        elapsed_status = curr_time - user_data.status_start_time
+        if elapsed_status >= 1.0:
+            current_fps = user_data.status_frame_count / elapsed_status
+            print(f"⏱️ [STATUS] 파이프라인 모니터링 중... | FPS: {current_fps:.1f} | 누적 프레임: {user_data.total_frames}")
+            user_data.status_start_time = curr_time
+            user_data.status_frame_count = 0
 
         format, width, height = get_caps_from_pad(element.get_static_pad("sink"))
         frame_raw = get_numpy_from_buffer(buffer, format, width, height)
