@@ -3,9 +3,8 @@ import sys
 import time
 from pathlib import Path
 
-# GStreamer 하드웨어 디코더 플러그인 충돌 방지 및 Qt 로그 억제
+# GStreamer 하드웨어 디코더 플러그인 중 일부 픽셀 포맷과 충돌하는 모듈들을 비활성화
 os.environ["GST_PLUGIN_FEATURE_RANK"] = "vaapidecodebin:NONE,v4l2slh265dec:NONE,v4l2slh264dec:NONE,v4l2h265dec:NONE,v4l2h264dec:NONE"
-os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.fonts=false"
 
 import cv2
 import numpy as np
