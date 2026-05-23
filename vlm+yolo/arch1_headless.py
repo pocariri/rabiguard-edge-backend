@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 # NCNN 및 OpenMP 최적화 환경 변수 설정
-os.environ["OMP_NUM_THREADS"] = "2"  # GStreamer 파이프라인(카메라 캡처 등)이 기아 상태에 빠지지 않도록 코어 2개만 할당
+os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["GST_PLUGIN_FEATURE_RANK"] = "vaapidecodebin:NONE,v4l2slh265dec:NONE,v4l2slh264dec:NONE,v4l2h265dec:NONE,v4l2h264dec:NONE"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.fonts=false"
 
@@ -38,6 +38,12 @@ try:
     from hailo_apps.python.core.common.defines import VLM_CHAT_APP, SHARED_VDEVICE_GROUP_ID, HAILO10H_ARCH
     from hailo_platform import VDevice
     from hailo_platform.genai import VLM
+    # 최적화된 파이프라인 구성을 위한 추가 임포트
+    from hailo_apps.python.core.gstreamer.gstreamer_helper_pipelines import (
+        INFERENCE_PIPELINE,
+        INFERENCE_PIPELINE_WRAPPER,
+        USER_CALLBACK_PIPELINE,
+    )
 except ImportError as e:
     print(f"❌ Hailo 라이브러리 임포트 실패: {e}")
     sys.exit(1)
@@ -56,6 +62,44 @@ def get_caps_from_pad_fixed(pad):
         return real_structure.get_value("format"), real_structure.get_value("width"), real_structure.get_value("height")
     except AttributeError:
         return None, None, None
+
+
+# -----------------------------------------------------------------------
+# Headless Optimized App Class
+# -----------------------------------------------------------------------
+class HeadlessDepthApp(GStreamerDepthApp):
+    """
+    Truly headless version of GStreamerDepthApp.
+    - Removes hailooverlay and display-related elements to save CPU.
+    - Reduces internal buffering (bypass queue) to minimize latency.
+    """
+    def get_pipeline_string(self):
+        source_pipeline = self.get_source_pipeline()
+        
+        depth_pipeline = INFERENCE_PIPELINE(
+            hef_path=self.hef_path,
+            post_process_so=self.post_process_so,
+            post_function_name=self.post_function_name,
+            name="depth_inference",
+        )
+        
+        # 최적화: bypass_max_size_buffers를 20에서 2로 줄여 지연시간(Lag) 최소화
+        depth_pipeline_wrapper = INFERENCE_PIPELINE_WRAPPER(
+            depth_pipeline, bypass_max_size_buffers=2, name="inference_wrapper_depth"
+        )
+        
+        user_callback_pipeline = USER_CALLBACK_PIPELINE()
+        
+        # HEADLESS: 디스플레이 관련 요소를 모두 제거하고 fakesink로 직접 연결
+        # hailooverlay와 videoconvert 단계를 생략하여 CPU 리소스를 절약합니다.
+        pipeline_str = (
+            f"{source_pipeline} ! "
+            f"{depth_pipeline_wrapper} ! "
+            f"{user_callback_pipeline} ! "
+            f"fakesink sync=false"
+        )
+        print("✅ [PIPELINE] Headless mode initialized (Display disabled, Latency minimized)")
+        return pipeline_str
 
 
 # -----------------------------------------------------------------------
@@ -140,7 +184,7 @@ class HeadlessAppCallback(app_callback_class):
         
         self.tracker_state = {}
         self.yolo_queue = queue.Queue(maxsize=1)
-        self.yolo_ready = True  # 동기화 플래그: YOLO가 프레임을 받을 준비가 되었는지 여부
+        self.yolo_ready = True  # 동기화 플래그
         self.yolo_thread = threading.Thread(target=self.yolo_worker, daemon=True)
         self.yolo_thread.start()
         
@@ -150,25 +194,30 @@ class HeadlessAppCallback(app_callback_class):
         yolo_count = 0
         
         while not stop_event.is_set():
-            self.yolo_ready = True  # 프레임 수신 대기 상태 알림
+            self.yolo_ready = True
             try:
                 data = self.yolo_queue.get(timeout=0.5)
             except queue.Empty: continue
             if data is None: break
             
-            frame_raw, depth_raw = data
+            frame_raw, depth_raw, fmt = data
             try:
-                # 전처리
-                frame_bgr = cv2.cvtColor(frame_raw, cv2.COLOR_RGBA2BGR)
-                h_orig, w_orig = frame_bgr.shape[:2]
-                frame_small = cv2.resize(frame_bgr, (320, 320))
+                h_orig, w_orig = frame_raw.shape[:2]
+                
+                # 전처리: 해상도를 320x320으로 축소
+                # 640x480 RGB -> 320x320 RGB (빠른 축소)
+                frame_small_rgb = cv2.resize(frame_raw, (320, 320), interpolation=cv2.INTER_LINEAR)
+                
+                # YOLO는 BGR을 기대하므로 작은 이미지에 대해서만 색상 변환 수행
+                color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
+                frame_small_bgr = cv2.cvtColor(frame_small_rgb, color_conv)
                 
                 depth_map = None
                 if depth_raw is not None:
                     depth_map = np.array(depth_raw, dtype=np.float32).reshape((256, 320))
                 
                 # NCNN 추론
-                results = self.model.track(frame_small, persist=True, tracker="bytetrack.yaml", classes=[0], verbose=False)
+                results = self.model.track(frame_small_bgr, persist=True, tracker="bytetrack.yaml", classes=[0], verbose=False)
                 
                 yolo_count += 1
                 now = time.time()
@@ -186,6 +235,7 @@ class HeadlessAppCallback(app_callback_class):
                         if track_id not in self.tracker_state:
                             self.tracker_state[track_id] = {"enter_time": None, "notified": False}
                         
+                        # 320x320 좌표를 원래 해상도로 복원
                         x1 = int(box[0] * (w_orig / 320))
                         y1 = int(box[1] * (h_orig / 320))
                         x2 = int(box[2] * (w_orig / 320))
@@ -206,6 +256,8 @@ class HeadlessAppCallback(app_callback_class):
                                 
                                 if abs(p_depth - z_depth) <= DEPTH_SIMILARITY_THRESHOLD:
                                     state["notified"] = True
+                                    # VLM에 보낼 큰 이미지는 필요한 시점에만 BGR 변환 수행
+                                    frame_bgr = cv2.cvtColor(frame_raw, color_conv)
                                     ctx = frame_bgr.copy()
                                     cv2.rectangle(ctx, (x1, y1), (x2, y2), (0, 0, 255), 3)
                                     cv2.polylines(ctx, [ROI_POLYGON], True, (255, 0, 0), 2)
@@ -226,9 +278,8 @@ def app_callback(element, buffer, user_data):
         if buffer is None: return
         curr_time = time.time()
         
-        # 최적화 핵심: YOLO 워커가 작업을 마쳐 프레임을 받을 준비가 된 경우에만 무거운 복사 연산을 수행 (지연시간 0 구현)
+        # 최적화: YOLO 워커가 작업을 마쳐 프레임을 받을 준비가 된 경우에만 무거운 복사 연산을 수행
         if not user_data.yolo_ready:
-            # 통계만 업데이트하고 즉시 리턴
             user_data.total_frames += 1
             user_data.status_frame_count += 1
             if curr_time - user_data.status_start_time >= 1.0:
@@ -236,14 +287,12 @@ def app_callback(element, buffer, user_data):
                 user_data.status_start_time, user_data.status_frame_count = curr_time, 0
             return
 
-        # YOLO가 프레임을 받을 준비가 되었으므로 플래그를 내리고 즉시 추출
         user_data.yolo_ready = False
 
         if user_data.caps_info is None:
             user_data.caps_info = get_caps_from_pad_fixed(element.get_static_pad("sink"))
         fmt, w, h = user_data.caps_info
 
-        # 데이터 복사 (YOLO가 필요로 하는 가장 최신 시점의 1회 수행)
         frame_raw = get_numpy_from_buffer(buffer, fmt, w, h)
         if frame_raw is None: return
 
@@ -252,10 +301,9 @@ def app_callback(element, buffer, user_data):
         depth_raw = depth_objs[0].get_data() if len(depth_objs) > 0 else None
 
         try:
-            # 큐가 꽉 차 있으면 비워줌 (안전장치)
             if user_data.yolo_queue.full():
                 user_data.yolo_queue.get_nowait()
-            user_data.yolo_queue.put_nowait((frame_raw, depth_raw))
+            user_data.yolo_queue.put_nowait((frame_raw, depth_raw, fmt))
         except queue.Empty: pass
         except queue.Full: pass
         
@@ -271,18 +319,22 @@ def app_callback(element, buffer, user_data):
 
 def main():
     print("🚀 [HEADLESS PIPELINE OPTIMIZED] 시작")
+    # 인자 설정
     if "--input" not in sys.argv: sys.argv.extend(["--input", "usb"])
     if "--width" not in sys.argv: sys.argv.extend(["--width", "640"])
     if "--height" not in sys.argv: sys.argv.extend(["--height", "480"])
+    
+    # 모델 경로
     model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yolo26n_ncnn_model")
     model = YOLO(model_path, task="detect")
     
+    # VLM 워커 시작
     vlm_thread = threading.Thread(target=vlm_worker_thread, daemon=True)
     vlm_thread.start()
     
+    # 앱 초기화 및 실행
     user_data = HeadlessAppCallback(model)
-    app = GStreamerDepthApp(app_callback, user_data)
-    app.video_sink = "fakesink sync=false"
+    app = HeadlessDepthApp(app_callback, user_data)
     
     try: app.run()
     except KeyboardInterrupt: print("\n🛑 종료 중...")
