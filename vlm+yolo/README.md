@@ -4,28 +4,32 @@
 
 ## 📂 파일 구성 및 설명
 
-### 1. `arch1_headless.py` (최종 최적화 - Headless 운영용)
+### 1. `arch1_headless_v2.py` (극한의 최적화 진행 중 🛠️)
+*   **방식**: `arch1_headless.py`를 기반으로 하며, CPU 추론 성능을 극한으로 끌어올리기 위한 추가 최적화가 적용된 버전입니다.
+*   **특징**: 
+    *   **NCNN 입력 해상도 축소**: YOLO 입력 크기를 `320x320`에서 `192x192`로 줄여, 추론 속도(YOLO FPS)를 기존 대비 2배 이상 향상시켰습니다.
+    *   **지속적 개선**: 현재 안정화된 파이프라인 구조 위에서 연산량을 최소화하기 위한 실험적 최적화가 진행 중입니다.
+*   **실행**: `python3 arch1_headless_v2.py`
+
+### 2. `arch1_headless.py` (기존 안정화 버전)
 *   **방식**: 디스플레이 출력 없이(Fakesink) 백그라운드에서 실행되며, 최적화된 비동기 파이프라인을 통해 YOLO(CPU), SCDepthV3(NPU), VLM(NPU)을 동시에 구동합니다.
 *   **특징**: 
     *   **지능적 프레임 드랍**: YOLO 연산이 바쁠 때 불필요한 데이터 복사를 건너뛰어 파이프라인 지연을 원천 차단합니다.
     *   **비동기 Worker 스레드**: YOLO와 VLM을 독립적인 스레드에서 실행하여 전체 시스템 반응성을 확보합니다.
-    *   **최적의 성능**: 라즈베리파이 5 + Hailo-10H 환경에서 가장 안정적이고 빠른 처리가 가능합니다.
 *   **실행**: `python3 arch1_headless.py`
 
-### 2. `arch1_yolo_depth.py` (실시간 시각화 버전)
+### 3. `arch1_yolo_depth.py` (실시간 시각화 버전)
 *   **방식**: 카메라 프레임에 깊이 맵(Depth Map)을 오버레이하여 보여주면서 실시간으로 YOLO 객체 탐지를 수행합니다.
 *   **특징**: OpenCV를 통해 현재 분석 상황을 시각적으로 확인할 수 있어 개발 및 디버깅에 유리합니다.
 *   **실행**: `python3 arch1_yolo_depth.py`
 
-### 3. `npu_vlm_camera_ncnn.py` (VLM 기본 연동 버전)
+### 4. `npu_vlm_camera_ncnn.py` (VLM 기본 연동 버전)
 *   **방식**: YOLO 객체 감지(CPU)와 VLM 모델(NPU)만을 연동한 기본적인 상황 인식 스크립트입니다.
 *   **특징**: Depth 판별 로직 없이 객체 감지 시 즉시 VLM 분석을 수행하는 기초 파이프라인입니다.
-*   **실행**: `python3 npu_vlm_camera_ncnn.py`
 
-### 4. `depth_only_camera.py` (깊이 측정 테스트용)
+### 5. `depth_only_camera.py` (깊이 측정 테스트용)
 *   **방식**: 오직 SCDepthV3 모델만을 사용하여 실시간으로 깊이 맵을 시각화합니다.
 *   **특징**: NPU의 깊이 측정 성능과 정확도를 독립적으로 테스트할 때 사용합니다.
-*   **실행**: `python3 depth_only_camera.py`
 
 ---
 
@@ -35,7 +39,7 @@
 2.  **YOLO NCNN 모델**: 상위 디렉토리에 `yolo26n_ncnn_model` 폴더가 존재해야 합니다.
 3.  **Python 패키지**: `ultralytics`, `ncnn`, `opencv-python`, `numpy` 등이 설치되어 있어야 합니다.
 
-## ⚙️ 로직 흐름 (arch1_headless 기준)
+## ⚙️ 로직 흐름 (Headless 버전 기준)
 
 1.  **YOLO 탐지 (CPU)**: 사람(Class 0)을 실시간으로 감지하고 ROI(관심 구역) 내 진입 여부를 확인합니다.
 2.  **시간 검증**: 해당 객체가 ROI 구역 내에 `2초` 이상 머무르는지(Tracking) 확인합니다.
@@ -43,5 +47,5 @@
 4.  **VLM 분석 (NPU)**: 모든 조건을 통과하면, 해당 프레임을 VLM(Vision Language Model)으로 넘겨 현재 상황을 요약 분석하여 알림을 생성합니다.
 
 ## 📝 참고 사항
-*   `history_arch1_headless.md`: `arch1_headless.py`의 최적화 과정과 주요 버그 수정 기록이 담겨 있습니다.
+*   `history_arch1_headless.md`: `arch1_headless.py` 및 `v2`의 최적화 과정과 주요 버그 수정 기록이 담겨 있습니다.
 *   GStreamer 1.26.2 버전의 버그(StructureWrapper)에 대한 패치가 코드 내에 포함되어 있습니다.
