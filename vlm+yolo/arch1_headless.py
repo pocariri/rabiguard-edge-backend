@@ -109,6 +109,10 @@ ROI_POLYGON = np.array([[100, 100], [540, 100], [540, 380], [100, 380]], np.int3
 ENTER_THRESHOLD_SEC = 2.0
 DEPTH_SIMILARITY_THRESHOLD = 0.5
 
+# 이미지 저장 경로 설정
+SAVE_DIR = Path(__file__).parent.parent / "_outputs" / "vlm_captures"
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
 stop_event = threading.Event()
 vlm_queue = queue.LifoQueue(maxsize=1)
 
