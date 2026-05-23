@@ -2532,7 +2532,44 @@ Shutting down... Hit Ctrl-C again to force quit.
 ^C
 
 ```
+## 7
+안정화 단계: 파이프라인 15 FPS 달성 및 지연시간 제거 성공
+
+### 주요 성과
+*   **자원 격리**: `OMP_NUM_THREADS=2` 설정을 통해 GStreamer 파이프라인 FPS를 3 FPS에서 15 FPS 수준으로 5배 향상.
+*   **동기화 최적화**: `yolo_ready` 플래그를 통한 Latency ZERO 구현으로 실시간성 확보.
+*   **안정성**: 여러 객체(ID 1~11)가 동시 감지되는 환경에서도 시스템 다운 없이 작동 확인.
+
+```bash
+python arch1_headless.py
+🚀 [HEADLESS PIPELINE OPTIMIZED] 시작
+...
+⏱️ [PIPELINE] FPS: 14.9
+Loading /media/rafour/USB_DRIVE/heechan/rafour-app/yolo26n_ncnn_model for NCNN inference...
+...
+⏱️ [PIPELINE] FPS: 16.5
+⏱️ [PIPELINE] FPS: 14.0
+📊 [YOLO SPEED] 0.0 FPS
+⚠️ [ZONE] ID 1 진입
+...
+⚠️ [ZONE] ID 10 진입
+⏱️ [PIPELINE] FPS: 2.1
+📊 [YOLO SPEED] 0.7 FPS
+⏱️ [PIPELINE] FPS: 17.8
+...
+```
+
 ## 8
+NCNN 입력 해상도 극한 축소 최적화 (320 -> 192)
+
+### 변경 목적
+*   YOLO 추론 속도(0.6~0.7 FPS)가 여전히 낮아 빠른 움직임을 놓칠 수 있음.
+*   연산량을 줄여 YOLO 실시간 FPS를 1.5 이상으로 확보하기 위함.
+
+### 수정 내용
+*   `cv2.resize` 해상도를 `320x320`에서 `192x192`로 축소.
+*   좌표 복원 스케일 비율을 `192` 기준으로 수정.
+
 ```py
 
 ```
@@ -2540,13 +2577,6 @@ Shutting down... Hit Ctrl-C again to force quit.
 
 ```
 ## 9
-```py
-
-```
-```
-
-```
-## 10
 ```py
 
 ```
