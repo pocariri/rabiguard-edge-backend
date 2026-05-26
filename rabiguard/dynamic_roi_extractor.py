@@ -117,8 +117,11 @@ class DynamicROIExtractor:
         """추출된 후보들을 Firebase Firestore에 저장합니다."""
         zones_data = {}
         for cand in candidates:
+            # Firestore는 중첩 배열(Nested Array)을 지원하지 않으므로 객체 리스트로 변환
+            polygon_dicts = [{"x": int(p[0]), "y": int(p[1])} for p in cand["points"]]
+            
             zones_data[cand["id"]] = {
-                "polygon": cand["points"],
+                "polygon": polygon_dicts,
                 "enter_threshold_sec": 2.0,
                 "min_people": 1,
                 "is_active": True,

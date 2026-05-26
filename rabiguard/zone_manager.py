@@ -66,9 +66,15 @@ class Zone:
         """
         Firestore payload 데이터를 바탕으로 구역 속성을 갱신합니다.
         """
-        polygon = data.get("polygon", [])
+        polygon_raw = data.get("polygon", [])
 
-        if polygon:
+        if polygon_raw:
+            # Firestore의 [{"x": 1, "y": 2}, ...] 형식을 [[1, 2], ...] 형식으로 변환
+            if len(polygon_raw) > 0 and isinstance(polygon_raw[0], dict):
+                polygon = [[p.get("x", 0), p.get("y", 0)] for p in polygon_raw]
+            else:
+                polygon = polygon_raw
+            
             self.polygon = np.array(polygon, np.int32)
         else:
             self.polygon = np.array([])
