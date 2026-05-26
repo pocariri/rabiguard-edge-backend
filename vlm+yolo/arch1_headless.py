@@ -113,6 +113,31 @@ DEPTH_SIMILARITY_THRESHOLD = 0.5
 SAVE_DIR = Path(__file__).parent.parent / "_outputs" / "vlm_captures"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
+# MARK: Visualization Settings
+visualize_queue = queue.LifoQueue(maxsize=1)
+
+def visualizer_thread():
+    """
+    추론 파이프라인과 독립적으로 동작하는 시각화 스레드.
+    최신 프레임만 가져와서 출력하며, 추론 성능에 영향을 주지 않습니다.
+    """
+    print("📺 [Visualizer] 시작 (Q 누르면 종료)")
+    while not stop_event.is_set():
+        try:
+            frame = visualize_queue.get(timeout=0.5)
+            if frame is None: break
+            
+            # 리소스 절약을 위해 렌더링 해상도 축소
+            disp_frame = cv2.resize(frame, (480, 360))
+            cv2.imshow("RAFOUR-DEBUG", disp_frame)
+            
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                stop_event.set()
+                break
+        except queue.Empty: continue
+    cv2.destroyAllWindows()
+# END MARK
+
 stop_event = threading.Event()
 vlm_queue = queue.LifoQueue(maxsize=1)
 
@@ -270,6 +295,28 @@ class HeadlessAppCallback(app_callback_class):
                         else:
                             state["enter_time"], state["notified"] = None, False
 
+                # MARK: Visualization Drawing
+                if "--visualize" in sys.argv:
+                    # 원본 복사 후 결과 그리기 (디버깅용)
+                    color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
+                    debug_img = cv2.cvtColor(frame_raw, color_conv)
+                    cv2.polylines(debug_img, [ROI_POLYGON], True, (255, 0, 0), 2)
+                    
+                    if results[0].boxes is not None:
+                        for box in results[0].boxes.xyxy.cpu().numpy():
+                            x1 = int(box[0] * (w_orig / 320))
+                            y1 = int(box[1] * (h_orig / 320))
+                            x2 = int(box[2] * (w_orig / 320))
+                            y2 = int(box[3] * (h_orig / 320))
+                            cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    
+                    # 시각화 큐에 전달 (비동기)
+                    try:
+                        visualize_queue.put_nowait(debug_img)
+                    except queue.Full:
+                        pass # 시각화 스레드가 바쁘면 건너뜀
+                # END MARK
+
                 for d_id in list(self.tracker_state.keys() - current_ids):
                     del self.tracker_state[d_id]
             except Exception as e:
@@ -336,6 +383,12 @@ def main():
     vlm_thread = threading.Thread(target=vlm_worker_thread, daemon=True)
     vlm_thread.start()
     
+    # MARK: Start Visualizer Thread
+    if "--visualize" in sys.argv:
+        v_thread = threading.Thread(target=visualizer_thread, daemon=True)
+        v_thread.start()
+    # END MARK
+
     # 앱 초기화 및 실행
     user_data = HeadlessAppCallback(model)
     app = HeadlessDepthApp(app_callback, user_data)
@@ -345,6 +398,9 @@ def main():
     finally:
         stop_event.set()
         vlm_queue.put(None)
+        # MARK: Cleanup visualizer
+        visualize_queue.put(None)
+        # END MARK
         user_data.yolo_thread.join(timeout=2.0)
         print("✅ 종료 완료")
 
