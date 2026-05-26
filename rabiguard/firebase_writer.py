@@ -55,3 +55,19 @@ def save_vlm_result_to_firestore(
     write_time, doc_ref = db.collection(collection_name).add(data)
 
     return doc_ref.id
+
+
+def save_zones_to_firestore(zones_data, collection_name="zones"):
+    """
+    추출된 Zone 정보를 Firestore에 저장합니다.
+    기존에 동일한 ID를 가진 문서는 덮어씌워집니다.
+    """
+    db = init_firestore()
+    batch = db.batch()
+
+    for zone_id, data in zones_data.items():
+        doc_ref = db.collection(collection_name).document(zone_id)
+        batch.set(doc_ref, data)
+
+    batch.commit()
+    print(f"✅ [Firestore] {len(zones_data)}개의 구역이 '{collection_name}' 컬렉션에 저장되었습니다.")
