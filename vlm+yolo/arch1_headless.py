@@ -201,9 +201,10 @@ def vlm_worker_thread():
 # Callback Class & YOLO Worker
 # -----------------------------------------------------------------------
 class HeadlessAppCallback(app_callback_class):
-    def __init__(self, model):
+    def __init__(self, model, visualize_enabled=False):
         super().__init__()
         self.model = model
+        self.visualize_enabled = visualize_enabled
         self.total_frames = 0
         self.status_start_time = time.time()
         self.status_frame_count = 0
@@ -296,7 +297,7 @@ class HeadlessAppCallback(app_callback_class):
                             state["enter_time"], state["notified"] = None, False
 
                 # MARK: Visualization Drawing
-                if "--visualize" in sys.argv:
+                if self.visualize_enabled:
                     # 원본 복사 후 결과 그리기 (디버깅용)
                     color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
                     debug_img = cv2.cvtColor(frame_raw, color_conv)
@@ -370,6 +371,15 @@ def app_callback(element, buffer, user_data):
 
 def main():
     print("🚀 [HEADLESS PIPELINE OPTIMIZED] 시작")
+    
+    # MARK: Start Visualizer Thread
+    visualize_enabled = "--visualize" in sys.argv
+    if visualize_enabled:
+        sys.argv.remove("--visualize")
+        v_thread = threading.Thread(target=visualizer_thread, daemon=True)
+        v_thread.start()
+    # END MARK
+
     # 인자 설정
     if "--input" not in sys.argv: sys.argv.extend(["--input", "usb"])
     if "--width" not in sys.argv: sys.argv.extend(["--width", "640"])
@@ -383,14 +393,8 @@ def main():
     vlm_thread = threading.Thread(target=vlm_worker_thread, daemon=True)
     vlm_thread.start()
     
-    # MARK: Start Visualizer Thread
-    if "--visualize" in sys.argv:
-        v_thread = threading.Thread(target=visualizer_thread, daemon=True)
-        v_thread.start()
-    # END MARK
-
     # 앱 초기화 및 실행
-    user_data = HeadlessAppCallback(model)
+    user_data = HeadlessAppCallback(model, visualize_enabled=visualize_enabled)
     app = HeadlessDepthApp(app_callback, user_data)
     
     try: app.run()
