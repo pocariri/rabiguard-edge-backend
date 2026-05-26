@@ -2,13 +2,19 @@ import cv2
 import json
 import numpy as np
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
+
+# 직접 실행 시 상위 패키지 인식을 위한 경로 추가
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
 
 try:
     from .config import YOLOE_MODEL_PATH, TARGET_OBJECTS_PATH, ZONES_CONFIG_PATH, EXTRACTED_ROIS_DIR
     from .firebase_writer import save_zones_to_firestore
-except ImportError:
+except (ImportError, ValueError):
     from config import YOLOE_MODEL_PATH, TARGET_OBJECTS_PATH, ZONES_CONFIG_PATH, EXTRACTED_ROIS_DIR
     from firebase_writer import save_zones_to_firestore
 
