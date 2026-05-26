@@ -1,6 +1,7 @@
 import cv2
 import json
 import numpy as np
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -17,9 +18,27 @@ class DynamicROIExtractor:
         print(f"📦 [ROI Extractor] 모델 로드 중: {model_path}")
         self.model = YOLOE(str(model_path))
         self.target_size = (640, 480) # arch1_headless 좌표계 기준
+        
+        # 필터링할 객체 목록 로드
+        self.target_list_path = Path(__file__).parent / "target_objects.txt"
+        self.target_objects = self.load_target_objects()
 
-    def extract_candidates(self, frame, env_tag_list=None):
-        """프레임에서 ROI 후보를 추출합니다."""
+    def load_target_objects(self):
+        """target_objects.txt 파일을 읽어 필터링 목록을 생성합니다."""
+        if not self.target_list_path.exists():
+            default_tags = ["bed", "chair", "couch", "dining table", "refrigerator", "tv", "toilet"]
+            with open(self.target_list_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(default_tags))
+            print(f"📝 [ROI Extractor] 기본 필터 목록 생성됨: {self.target_list_path}")
+            return set(default_tags)
+        
+        with open(self.target_list_path, "r", encoding="utf-8") as f:
+            tags = {line.strip().lower() for line in f if line.strip()}
+        print(f"📋 [ROI Extractor] {len(tags)}개의 타겟 객체 로드 완료")
+        return tags
+
+    def extract_candidates(self, frame):
+        """프레임에서 target_objects에 포함된 ROI 후보만 추출합니다."""
         frame_resized = cv2.resize(frame, self.target_size)
         results = self.model.predict(frame_resized, verbose=False)
         
@@ -34,7 +53,9 @@ class DynamicROIExtractor:
         for i in range(len(boxes)):
             cls_id = int(boxes.cls[i].item())
             class_name = names[cls_id].lower()
-            if env_tag_list and class_name not in env_tag_list:
+            
+            # 필터링 목록에 있는지 확인
+            if class_name not in self.target_objects:
                 continue
 
             conf = float(boxes.conf[i].item())
@@ -54,7 +75,7 @@ class DynamicROIExtractor:
             candidates.append({
                 "id": obj_id,
                 "class_name": class_name,
-                "points": approx_polygon.tolist(), # JSON 저장을 위해 list 변환
+                "points": approx_polygon.tolist(),
                 "crop": crop_img,
                 "bbox": [x1, y1, x2, y2]
             })
@@ -80,25 +101,20 @@ if __name__ == "__main__":
     extractor = DynamicROIExtractor()
     print("📸 [ROI Extractor] 카메라 프레임 캡처 중...")
     cap = cv2.VideoCapture(0)
-    # 카메라 안정화를 위해 몇 프레임 건너뜀
     for _ in range(5): cap.read()
     ret, frame = cap.read()
     cap.release()
 
     if ret:
-        # 1. 구역 추출
         rois = extractor.extract_candidates(frame)
         if rois:
-            # 2. 설정 파일에 저장 (이 시점에 main_local이 감지하고 업데이트함)
             extractor.save_to_config(rois)
-            
-            # 3. 디버그용 크롭 이미지 저장
             out_dir = Path("_outputs/extracted_rois")
             out_dir.mkdir(parents=True, exist_ok=True)
             for roi in rois:
                 cv2.imwrite(str(out_dir / f"{roi['id']}.png"), roi['crop'])
             print(f"🖼️ [ROI Extractor] 개별 구역 이미지가 '{out_dir}'에 저장되었습니다.")
         else:
-            print("⚠️ [ROI Extractor] 감지된 구역이 없습니다.")
+            print(f"⚠️ [ROI Extractor] 타겟 목록({extractor.target_objects})에 해당하는 객체를 찾지 못했습니다.")
     else:
         print("❌ [ROI Extractor] 카메라를 읽을 수 없습니다.")
