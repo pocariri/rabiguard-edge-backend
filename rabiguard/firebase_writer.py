@@ -38,20 +38,38 @@ def save_vlm_result_to_firestore(
 ):
     """
     VLM 분석 결과를 Firestore에 저장합니다.
+
+    저장 구조:
+    vlm_events/{zone_id}/events/{event_doc_id}
     """
+
     db = init_firestore()
 
-    data = {
-        "created_at": datetime.now(timezone.utc),
+    if not zone_id:
+        zone_id = "unknown_zone"
+
+    now = datetime.now(timezone.utc)
+
+    # 구역별 문서 참조
+    zone_doc_ref = db.collection(collection_name).document(str(zone_id))
+
+    # 구역별 events 서브컬렉션에 이벤트 기록 저장
+    event_data = {
+        "created_at": now,
         "english_text": english_text,
         "korean_text": korean_text,
         "image_path": image_path,
-        "zone_id": zone_id,
+        "zone_id": str(zone_id),
         "track_id": track_id,
         "person_depth": person_depth,
         "zone_depth": zone_depth,
     }
 
-    write_time, doc_ref = db.collection(collection_name).add(data)
+    # 자동 ID 대신 직접 문서 ID 생성
+    event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S_%f')}_track_{track_id}"
 
-    return doc_ref.id
+    # 생성한 문서 ID로 저장
+    event_doc_ref = zone_doc_ref.collection("events").document(event_doc_id)
+    event_doc_ref.set(event_data)
+
+    return event_doc_ref.id
