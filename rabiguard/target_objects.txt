@@ -1,0 +1,30 @@
+air conditioner
+armchair
+atm
+bed
+blackboard
+cabinet
+chair
+closet
+container
+convenience store
+couch
+counter
+display window
+door
+factory
+fence
+forklift
+heater
+machine
+playground
+school bus
+shelf
+shower
+sink
+stairs
+table
+truck
+warehouse
+whiteboard
+window

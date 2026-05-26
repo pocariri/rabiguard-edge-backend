@@ -50,10 +50,8 @@ def save_vlm_result_to_firestore(
 
     now = datetime.now(timezone.utc)
 
-    # 구역별 문서 참조
     zone_doc_ref = db.collection(collection_name).document(str(zone_id))
 
-    # 구역별 events 서브컬렉션에 이벤트 기록 저장
     event_data = {
         "created_at": now,
         "english_text": english_text,
@@ -65,10 +63,8 @@ def save_vlm_result_to_firestore(
         "zone_depth": zone_depth,
     }
 
-    # 자동 ID 대신 직접 문서 ID 생성
-    event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S_%f')}_track_{track_id}"
+    event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S')}_track_{track_id}"
 
-    # 생성한 문서 ID로 저장
     event_doc_ref = zone_doc_ref.collection("events").document(event_doc_id)
     event_doc_ref.set(event_data)
 
