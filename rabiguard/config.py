@@ -23,13 +23,15 @@ YOLO_INPUT_SIZE = 320
 # Paths
 # ------------------------------------------------------------
 
-# 현재 파일 위치:
-# rabiguard-edge-backend/rabiguard/config.py
-RABIGURAD_EDGE_BACKEND_DIR = Path(__file__).resolve().parent
-MODEL_DIR = "./models"
+# 현재 파일 위치: rabiguard/config.py
+RABIGUARD_DIR = Path(__file__).resolve().parent
 
+# 프로젝트 루트 위치: rafour-app/
+ROOT_DIR = RABIGUARD_DIR.parent
+
+MODEL_DIR = ROOT_DIR / "models"
 MODEL_PATH = MODEL_DIR / "yolo26n_ncnn_model"
-YOLOE_MODEL_PATH = MODEL_DIR"
+YOLOE_MODEL_PATH = MODEL_DIR / "yoloe-26n-seg-pf.pt"
 
 SAVE_DIR = ROOT_DIR / "_outputs" / "vlm_captures"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
