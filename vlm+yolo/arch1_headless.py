@@ -154,6 +154,13 @@ def vlm_worker_thread():
             except queue.Empty: continue
             if item is None: break
             context_img, track_id, p_depth, r_depth = item
+            
+            # [SAVE] VLM 분석 대상 이미지 저장 (박스/ROI 포함)
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            save_path = SAVE_DIR / f"vlm_event_ID{track_id}_{timestamp}.jpg"
+            cv2.imwrite(str(save_path), context_img)
+            print(f"📸 [VLM] 이벤트 이미지 저장됨: {save_path}")
+
             vlm_img = cv2.resize(context_img, (336, 336))
             vlm_img = cv2.cvtColor(vlm_img, cv2.COLOR_BGR2RGB)
             prompt = [
@@ -189,6 +196,13 @@ class HeadlessAppCallback(app_callback_class):
         self.tracker_state = {}
         self.yolo_queue = queue.Queue(maxsize=1)
         self.yolo_ready = True  # 동기화 플래그
+
+        # [SNAPSHOT] 정기적 스냅샷 설정 (10초 간격)
+        self.last_snapshot_time = 0
+        self.snapshot_interval = 10.0
+        self.snapshot_dir = SAVE_DIR.parent / "snapshots"
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+
         self.yolo_thread = threading.Thread(target=self.yolo_worker, daemon=True)
         self.yolo_thread.start()
         
@@ -207,7 +221,18 @@ class HeadlessAppCallback(app_callback_class):
             frame_raw, depth_raw, fmt = data
             try:
                 h_orig, w_orig = frame_raw.shape[:2]
-                
+                color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
+
+                # [SAVE] 정기적 시스템 스냅샷 저장
+                now = time.time()
+                if now - self.last_snapshot_time >= self.snapshot_interval:
+                    self.last_snapshot_time = now
+                    snapshot_bgr = cv2.cvtColor(frame_raw, color_conv)
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    snapshot_path = self.snapshot_dir / f"snapshot_{timestamp}.jpg"
+                    cv2.imwrite(str(snapshot_path), snapshot_bgr)
+                    print(f"📷 [SYSTEM] 정기 스냅샷 저장됨: {snapshot_path}")
+
                 # 전처리: 해상도를 320x320으로 축소
                 # 640x480 RGB -> 320x320 RGB (빠른 축소)
                 frame_small_rgb = cv2.resize(frame_raw, (320, 320), interpolation=cv2.INTER_LINEAR)
