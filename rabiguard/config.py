@@ -24,12 +24,12 @@ YOLO_INPUT_SIZE = 320
 # ------------------------------------------------------------
 
 # 현재 파일 위치:
-# rabiguard-edge-backend/vlm+yolo/arch1_dynamic/config.py
-ARCH1_DYNAMIC_DIR = Path(__file__).resolve().parent
-VLM_YOLO_DIR = ARCH1_DYNAMIC_DIR.parent
-ROOT_DIR = VLM_YOLO_DIR.parent
+# rabiguard-edge-backend/rabiguard/config.py
+RABIGURAD_EDGE_BACKEND_DIR = Path(__file__).resolve().parent
+MODEL_DIR = "./models"
 
-MODEL_PATH = ROOT_DIR / "yolo26n_ncnn_model"
+MODEL_PATH = MODEL_DIR / "yolo26n_ncnn_model"
+YOLOE_MODEL_PATH = MODEL_DIR"
 
 SAVE_DIR = ROOT_DIR / "_outputs" / "vlm_captures"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
