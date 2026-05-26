@@ -69,7 +69,7 @@ def main():
     parser.add_argument(
         "--image-path",
         type=str,
-        default="/home/rafour/workspace/jongmin/rafour-app/images/test6.jpg",
+        default="/home/rafour/workspace/jongmin/rafour-app/images/test3.jpg",
         help="Path to input image file",
     )
 
