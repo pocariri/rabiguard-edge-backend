@@ -249,22 +249,8 @@ class HeadlessAppCallback(app_callback_class):
                 h_orig, w_orig = frame_raw.shape[:2]
                 color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
 
-                # [SAVE] 정기적 시스템 스냅샷 저장
-                now = time.time()
-                if now - self.last_snapshot_time >= self.snapshot_interval:
-                    self.last_snapshot_time = now
-                    snapshot_bgr = cv2.cvtColor(frame_raw, color_conv)
-                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                    snapshot_path = self.snapshot_dir / f"snapshot_{timestamp}.jpg"
-                    cv2.imwrite(str(snapshot_path), snapshot_bgr)
-                    print(f"📷 [SYSTEM] 정기 스냅샷 저장됨: {snapshot_path}")
-
                 # 전처리: 해상도를 320x320으로 축소
-                # 640x480 RGB -> 320x320 RGB (빠른 축소)
                 frame_small_rgb = cv2.resize(frame_raw, (320, 320), interpolation=cv2.INTER_LINEAR)
-                
-                # YOLO는 BGR을 기대하므로 작은 이미지에 대해서만 색상 변환 수행
-                color_conv = cv2.COLOR_RGB2BGR if fmt == "RGB" else cv2.COLOR_RGBA2BGR
                 frame_small_bgr = cv2.cvtColor(frame_small_rgb, color_conv)
                 
                 depth_map = None
@@ -276,6 +262,33 @@ class HeadlessAppCallback(app_callback_class):
                 
                 yolo_count += 1
                 now = time.time()
+                
+                # [SAVE] 정기적 시스템 스냅샷 저장 (박스 및 ROI 포함)
+                if now - self.last_snapshot_time >= self.snapshot_interval:
+                    self.last_snapshot_time = now
+                    snapshot_draw = cv2.cvtColor(frame_raw, color_conv)
+                    
+                    # ROI 구역 그리기
+                    cv2.polylines(snapshot_draw, [ROI_POLYGON], True, (255, 0, 0), 2)
+                    
+                    # 모든 탐지된 객체 박스 그리기
+                    if results[0].boxes is not None:
+                        boxes = results[0].boxes.xyxy.cpu().numpy()
+                        track_ids = results[0].boxes.id.int().cpu().numpy() if results[0].boxes.id is not None else [None] * len(boxes)
+                        for box, tid in zip(boxes, track_ids):
+                            x1 = int(box[0] * (w_orig / 320))
+                            y1 = int(box[1] * (h_orig / 320))
+                            x2 = int(box[2] * (w_orig / 320))
+                            y2 = int(box[3] * (h_orig / 320))
+                            cv2.rectangle(snapshot_draw, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            if tid is not None:
+                                cv2.putText(snapshot_draw, f"ID:{tid}", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                    timestamp = time.strftime("%Y%m%d-%H%M%S")
+                    snapshot_path = self.snapshot_dir / f"snapshot_{timestamp}.jpg"
+                    cv2.imwrite(str(snapshot_path), snapshot_draw)
+                    print(f"📷 [SYSTEM] 분석 스냅샷 저장됨 (박스 포함): {snapshot_path}")
+
                 if now - last_yolo_time >= 2.0:
                     print(f"📊 [YOLO SPEED] {yolo_count / (now - last_yolo_time):.1f} FPS")
                     yolo_count, last_yolo_time = 0, now
@@ -288,7 +301,7 @@ class HeadlessAppCallback(app_callback_class):
                     for box, track_id in zip(boxes_small, track_ids):
                         current_ids.add(track_id)
                         if track_id not in self.tracker_state:
-                            self.tracker_state[track_id] = {"enter_time": None, "notified": False}
+                            self.tracker_state[track_id] = {"enter_time": None, "notified": False, "last_log_time": 0}
                         
                         # 320x320 좌표를 원래 해상도로 복원
                         x1 = int(box[0] * (w_orig / 320))
@@ -302,22 +315,37 @@ class HeadlessAppCallback(app_callback_class):
                         if cv2.pointPolygonTest(ROI_POLYGON, (cx, cy), False) >= 0:
                             if state["enter_time"] is None:
                                 state["enter_time"] = time.time()
-                                print(f"⚠️ [ZONE] ID {track_id} 진입")
+                                state["last_log_time"] = 0
+                                print(f"⚠️ [ZONE] ID {track_id} 구역 내부 포착 (Timer 시작)")
                             
-                            if time.time() - state["enter_time"] >= ENTER_THRESHOLD_SEC and not state["notified"]:
-                                p_depth = get_roi_depth(depth_map, x1, y1, x2, y2)
-                                rx, ry, rw, rh = cv2.boundingRect(ROI_POLYGON)
-                                z_depth = get_roi_depth(depth_map, rx, ry, rx+rw, ry+rh)
-                                
-                                if abs(p_depth - z_depth) <= DEPTH_SIMILARITY_THRESHOLD:
-                                    state["notified"] = True
-                                    # VLM에 보낼 큰 이미지는 필요한 시점에만 BGR 변환 수행
-                                    frame_bgr = cv2.cvtColor(frame_raw, color_conv)
-                                    ctx = frame_bgr.copy()
-                                    cv2.rectangle(ctx, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                                    cv2.polylines(ctx, [ROI_POLYGON], True, (255, 0, 0), 2)
-                                    try: vlm_queue.put_nowait((ctx, track_id, p_depth, z_depth))
-                                    except queue.Full: pass
+                            wait_time = time.time() - state["enter_time"]
+                            if not state["notified"]:
+                                if wait_time >= ENTER_THRESHOLD_SEC:
+                                    p_depth = get_roi_depth(depth_map, x1, y1, x2, y2)
+                                    rx, ry, rw, rh = cv2.boundingRect(ROI_POLYGON)
+                                    z_depth = get_roi_depth(depth_map, rx, ry, rx+rw, ry+rh)
+                                    depth_diff = abs(p_depth - z_depth)
+                                    
+                                    if depth_diff <= DEPTH_SIMILARITY_THRESHOLD:
+                                        print(f"🚨 [DETECTION] ID {track_id} 최종 진입 확정! (거리차: {depth_diff:.2f}m)")
+                                        state["notified"] = True
+                                        # VLM에 보낼 큰 이미지는 필요한 시점에만 BGR 변환 수행
+                                        frame_bgr = cv2.cvtColor(frame_raw, color_conv)
+                                        ctx = frame_bgr.copy()
+                                        cv2.rectangle(ctx, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                                        cv2.polylines(ctx, [ROI_POLYGON], True, (255, 0, 0), 2)
+                                        try: vlm_queue.put_nowait((ctx, track_id, p_depth, z_depth))
+                                        except queue.Full: pass
+                                    else:
+                                        # 물리적 필터링 대기 로그 (1초 간격)
+                                        if time.time() - state.get("last_log_time", 0) >= 1.0:
+                                            print(f"⏳ [PHYSICAL] ID {track_id} 거리 불일치 (사람:{p_depth:.1f}m, 구역:{z_depth:.1f}m, 차이:{depth_diff:.2f}m)")
+                                            state["last_log_time"] = time.time()
+                                else:
+                                    # 시간적 필터링 대기 로그 (1초 간격)
+                                    if time.time() - state.get("last_log_time", 0) >= 1.0:
+                                        print(f"⏳ [TEMPORAL] ID {track_id} 진입 대기 중... ({wait_time:.1f}/{ENTER_THRESHOLD_SEC}s)")
+                                        state["last_log_time"] = time.time()
                         else:
                             state["enter_time"], state["notified"] = None, False
 
