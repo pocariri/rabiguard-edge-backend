@@ -1,45 +1,44 @@
 # Capstone Design (2026-1) - Rafour
 
 ## 실행 방법
-### 1.가상환경 활성화
+
+### 1. 가상환경 활성화
 
 애플리케이션을 실행하기 전, 프로젝트 디렉토리(`rafour-app`)에서 가상환경을 먼저 활성화해야 합니다.
 ```bash
 source .venv/bin/activate
 ```
 
-### 2.모델 실행
+### 2. 메인 애플리케이션 실행 (RabiGuard)
 
-가상환경이 활성화된 상태에서, 실행하고자 하는 기능에 맞춰 해당 경로로 이동한 뒤 스크립트를 실행합니다. 
+Firestore와 연동되어 실시간 구역 감지 및 VLM 상황 분석을 수행하는 통합 엔진입니다.
 
-**2-1. YOLO + VLM**
+**준비 사항:**
+- `firebase_key.json`: Firebase 서비스 계정 키 파일이 프로젝트 루트에 위치해야 합니다.
 
-경로: `/rafour-app`
-
-YOLO26n으로 사람 탐지 후 VLM에 연계합니다. Raspberry Pi와 연결된 디스플레이에 출력합니다.
+**실행:**
 ```bash
-DISPLAY=:0 python npu_vlm_camera_ncnn.py
+# 디스플레이 출력이 필요한 경우 (GStreamer 윈도우 표시)
+DISPLAY=:0 python -m rabiguard.main
+
+# 터미널에서만 실행 (Headless)
+python -m rabiguard.main
 ```
 
-**2-2. YOLOE(테스트)**
+### 3. 자동 구역 설정 (ROI Extractor)
 
-경로: `/rafour-app/yoloe_tests`
+카메라를 통해 실내 환경의 주요 객체(침대, 의자 등)를 탐지하여 추천 감지 구역을 Firestore에 자동으로 등록합니다.
 
-YOLOE (사전 없이 방대한 객체 탐지): 연결된 디스플레이에 출력합니다.
 ```bash
-DISPLAY=:0 python run.py
+python -m rabiguard.dynamic_roi_extractor
 ```
 
-**2-3. VLM(테스트)**
+### 4. WebRTC 실시간 스트리밍 (모니터링)
 
-실행 경로: `/rafour-app/vlm`
-
-이미지 경로: `/rafour-app/images`
-
-test image를 읽어서 실행합니다.
+카메라 영상을 WebRTC를 통해 원격으로 스트리밍합니다.
 
 ```bash
-python qwen_runner.py
+python webRTC/webrtc_video.py
 ```
 
 ## hailo-apps 관련 참고 사항

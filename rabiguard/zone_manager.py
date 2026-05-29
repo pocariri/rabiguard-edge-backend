@@ -66,9 +66,15 @@ class Zone:
         """
         Firestore payload 데이터를 바탕으로 구역 속성을 갱신합니다.
         """
-        polygon = data.get("polygon", [])
+        polygon_raw = data.get("polygon", [])
 
-        if polygon:
+        if polygon_raw:
+            # Firestore의 [{"x": 1, "y": 2}, ...] 형식을 [[1, 2], ...] 형식으로 변환
+            if len(polygon_raw) > 0 and isinstance(polygon_raw[0], dict):
+                polygon = [[p.get("x", 0), p.get("y", 0)] for p in polygon_raw]
+            else:
+                polygon = polygon_raw
+            
             self.polygon = np.array(polygon, np.int32)
         else:
             self.polygon = np.array([])
@@ -231,10 +237,24 @@ class ZoneManager:
                 # frame_raw를 BGR로 변환
                 frame_bgr = cv2.cvtColor(frame_raw, color_conv)
 
-                # VLM용 context 이미지 생성
-                ctx = frame_bgr.copy()
-                cv2.rectangle(ctx, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                cv2.polylines(ctx, [zone.polygon], True, (255, 0, 0), 2)
+                # 구역(Zone) 주변 크롭 좌표 계산 (패딩 포함)
+                rx, ry, rw, rh = cv2.boundingRect(zone.polygon)
+                pad_x = int(rw * 0.2) + 20
+                pad_y = int(rh * 0.2) + 20
+                h, w = frame_bgr.shape[:2]
+
+                crop_x1 = max(0, rx - pad_x)
+                crop_y1 = max(0, ry - pad_y)
+                crop_x2 = min(w, rx + rw + pad_x)
+                crop_y2 = min(h, ry + rh + pad_y)
+
+                # VLM용 context 이미지 생성 (전체 프레임에 오버레이 후 크롭)
+                ctx_full = frame_bgr.copy()
+                cv2.rectangle(ctx_full, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                cv2.polylines(ctx_full, [zone.polygon], True, (255, 0, 0), 2)
+                
+                # 구역 주변으로 크롭된 이미지
+                ctx_cropped = ctx_full[crop_y1:crop_y2, crop_x1:crop_x2]
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -242,7 +262,7 @@ class ZoneManager:
                 over_path = SAVE_DIR / f"{zone_id}_ID_{t_id}_{timestamp}_over.jpg"
 
                 cv2.imwrite(str(orig_path), frame_bgr)
-                cv2.imwrite(str(over_path), ctx)
+                cv2.imwrite(str(over_path), ctx_cropped)
 
                 try:
                     if vlm_queue.full():
@@ -254,7 +274,7 @@ class ZoneManager:
 
                     vlm_queue.put_nowait(
                         {
-                            "image": ctx,
+                            "image": ctx_cropped,
                             "track_id": t_id,
                             "p_depth": p_depth,
                             "z_depth": z_depth,

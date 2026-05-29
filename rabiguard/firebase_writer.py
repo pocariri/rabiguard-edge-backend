@@ -38,20 +38,50 @@ def save_vlm_result_to_firestore(
 ):
     """
     VLM 분석 결과를 Firestore에 저장합니다.
+
+    저장 구조:
+    vlm_events/{zone_id}/events/{event_doc_id}
     """
+
     db = init_firestore()
 
-    data = {
-        "created_at": datetime.now(timezone.utc),
+    if not zone_id:
+        zone_id = "unknown_zone"
+
+    now = datetime.now(timezone.utc)
+
+    zone_doc_ref = db.collection(collection_name).document(str(zone_id))
+
+    event_data = {
+        "created_at": now,
         "english_text": english_text,
         "korean_text": korean_text,
         "image_path": image_path,
-        "zone_id": zone_id,
+        "zone_id": str(zone_id),
         "track_id": track_id,
         "person_depth": person_depth,
         "zone_depth": zone_depth,
     }
 
-    write_time, doc_ref = db.collection(collection_name).add(data)
+    event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S')}_track_{track_id}"
 
-    return doc_ref.id
+    event_doc_ref = zone_doc_ref.collection("events").document(event_doc_id)
+    event_doc_ref.set(event_data)
+
+    return event_doc_ref.id
+
+
+def save_zones_to_firestore(zones_data, collection_name="zones"):
+    """
+    추출된 Zone 정보를 Firestore에 저장합니다.
+    기존에 동일한 ID를 가진 문서는 덮어씌워집니다.
+    """
+    db = init_firestore()
+    batch = db.batch()
+
+    for zone_id, data in zones_data.items():
+        doc_ref = db.collection(collection_name).document(zone_id)
+        batch.set(doc_ref, data)
+
+    batch.commit()
+    print(f"✅ [Firestore] {len(zones_data)}개의 구역이 '{collection_name}' 컬렉션에 저장되었습니다.")

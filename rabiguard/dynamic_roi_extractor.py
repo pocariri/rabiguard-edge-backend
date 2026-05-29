@@ -2,8 +2,21 @@ import cv2
 import json
 import numpy as np
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
+
+# 직접 실행 시 상위 패키지 인식을 위한 경로 추가
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
+try:
+    from .config import YOLOE_MODEL_PATH, TARGET_OBJECTS_PATH, ZONES_CONFIG_PATH, EXTRACTED_ROIS_DIR
+    from .firebase_writer import save_zones_to_firestore
+except (ImportError, ValueError):
+    from config import YOLOE_MODEL_PATH, TARGET_OBJECTS_PATH, ZONES_CONFIG_PATH, EXTRACTED_ROIS_DIR
+    from firebase_writer import save_zones_to_firestore
 
 try:
     from ultralytics import YOLOE
@@ -13,14 +26,14 @@ except ImportError:
 class DynamicROIExtractor:
     def __init__(self, model_path=None):
         if model_path is None:
-            model_path = Path(__file__).parent.parent / "yoloe_tests" / "yoloe-26n-seg-pf.pt"
+            model_path = YOLOE_MODEL_PATH
         
         print(f"📦 [ROI Extractor] 모델 로드 중: {model_path}")
         self.model = YOLOE(str(model_path))
         self.target_size = (640, 480) # arch1_headless 좌표계 기준
         
         # 필터링할 객체 목록 로드
-        self.target_list_path = Path(__file__).parent / "target_objects.txt"
+        self.target_list_path = TARGET_OBJECTS_PATH
         self.target_objects = self.load_target_objects()
 
     def load_target_objects(self):
@@ -81,8 +94,11 @@ class DynamicROIExtractor:
             })
         return candidates
 
-    def save_to_config(self, candidates, config_path="zones_config.json"):
+    def save_to_config(self, candidates, config_path=None):
         """추출된 후보들을 zones_config.json 형식으로 저장합니다."""
+        if config_path is None:
+            config_path = ZONES_CONFIG_PATH
+
         config = {}
         for cand in candidates:
             config[cand["id"]] = {
@@ -97,6 +113,23 @@ class DynamicROIExtractor:
             json.dump(config, f, indent=4, ensure_ascii=False)
         print(f"💾 [ROI Extractor] {len(candidates)}개의 구역을 '{config_path}'에 저장했습니다.")
 
+    def save_to_firebase(self, candidates, collection_name="zones"):
+        """추출된 후보들을 Firebase Firestore에 저장합니다."""
+        zones_data = {}
+        for cand in candidates:
+            # Firestore는 중첩 배열(Nested Array)을 지원하지 않으므로 객체 리스트로 변환
+            polygon_dicts = [{"x": int(p[0]), "y": int(p[1])} for p in cand["points"]]
+            
+            zones_data[cand["id"]] = {
+                "polygon": polygon_dicts,
+                "enter_threshold_sec": 2.0,
+                "min_people": 1,
+                "is_active": True,
+                "class_name": cand["class_name"]
+            }
+        
+        save_zones_to_firestore(zones_data, collection_name=collection_name)
+
 if __name__ == "__main__":
     extractor = DynamicROIExtractor()
     print("📸 [ROI Extractor] 카메라 프레임 캡처 중...")
@@ -108,8 +141,13 @@ if __name__ == "__main__":
     if ret:
         rois = extractor.extract_candidates(frame)
         if rois:
+            # Firebase에 저장
+            extractor.save_to_firebase(rois)
+            
+            # 로컬 파일로도 백업 저장
             extractor.save_to_config(rois)
-            out_dir = Path("_outputs/extracted_rois")
+            
+            out_dir = EXTRACTED_ROIS_DIR
             out_dir.mkdir(parents=True, exist_ok=True)
             for roi in rois:
                 cv2.imwrite(str(out_dir / f"{roi['id']}.png"), roi['crop'])
