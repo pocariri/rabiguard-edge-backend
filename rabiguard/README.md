@@ -1,60 +1,48 @@
 # RabiGuard (Modular & Firestore-driven)
 
-이 폴더는 기존의 단일 파일 기반 `arch1_headless.py`를 확장성 높은 모듈형 아키텍처로 리팩토링한 버전입니다. 
-클라이언트(iOS 앱 등)에서 Firebase Firestore를 통해 구역(Zone)을 실시간으로 추가/수정/삭제하면, 디바이스를 재시작하지 않고도 즉시 감지 로직에 반영되도록 설계되었습니다.
+이 폴더는 실시간 객체 탐지 및 다각형 기반 구역 감시를 수행하는 통합 엔진입니다. 
+클라이언트(Expo 앱 등)에서 Firebase Firestore를 통해 모든 설정을 실시간으로 제어할 수 있도록 설계되었습니다.
+
+## 🏗️ 핵심 아키텍처: Orchestrator
+
+시스템의 모든 프로세스는 `orchestrator.py`에 의해 관리됩니다. 
+카메라 자원의 상호 배제(Mutual Exclusivity)를 보장하며, 다음과 같은 전환 로직을 수행합니다.
+
+- **감시 모드(`main.py`)**: YOLO + Depth + VLM을 활용한 상시 침입 탐지.
+- **스트리밍 모드(`webrtc_video.py`)**: 실시간 영상 확인 시 감시 모드를 일시 중지하고 스트림 개시.
+- **자동 설정 모드(`dynamic_roi_extractor.py`)**: 가구 위치를 분석하여 구역을 자동 생성.
 
 ## 📁 파일 구조 및 역할
 
-- **`config.py`**
-  - 스레드 안전 큐(`zone_config_queue`, `vlm_queue`) 생성 (Phase 1)
-  - 글로벌 임계값 및 경로(NCNN 모델, VLM 캡처 이미지 저장 경로 등) 관리
-  - 전역 설정 파일. 모델 경로, 임계값(Threshold), 스레드 안전 큐 등을 관리합니다.
-
-- **`firestore_listener.py`**
-  - Firestore의 `Zones` 컬렉션을 비동기적으로 구독(Subscribe)하는 백그라운드 스레드 (Phase 2)
-  - 클라이언트의 변경 사항을 감지하여 표준화된 페이로드(Payload) 딕셔너리로 변환 후 큐에 푸시
-
-- **`zone_manager.py`**
-  - 개별 구역의 상태를 관리하는 `Zone` 클래스 정의 (Phase 3)
-  - 다중 구역의 논리 연산을 담당하는 `ZoneManager` 클래스 정의
-  - 매 프레임마다 YOLO 탐지 결과와 Depth 맵을 받아 일괄 진입(Entry) 검사 및 타이머 계산 수행
-  - 이벤트 조건(명수, 시간) 충족 시 VLM 분석 큐로 감지된 주변 구역 크롭 이미지 전송 및 증적 이미지 저장
-
-- **`dynamic_roi_extractor.py`**
-  - 실내 환경을 분석하여 침대, 의자 등 주요 가구 위치를 기반으로 감지 구역을 자동 추천/생성합니다.
-
+- **`orchestrator.py` (Entry Point)**
+  - Firestore `commands` 컬렉션을 감시하여 각 프로세스를 실행/종료 및 복구.
 - **`main.py`**
-  - GStreamer 파이프라인 (카메라 + Hailo NPU Depth) 제어
-  - YOLO 워커 스레드 구동 및 NCNN 추론 (Phase 4)
-  - VLM 워커 스레드 구동 (Hailo NPU 텍스트 생성)
-  - 모든 모듈의 진입점(Entry Point)이자 하드웨어 자원 관리 총괄
+  - GStreamer 파이프라인(카메라 + Depth) 및 YOLO/VLM 워커 구동.
+- **`zone_manager.py`**
+  - **다각형(Polygon)** 기반 구역 관리 및 마스크 기반 정밀 Depth 검증 수행.
+- **`firestore_listener.py`**
+  - Firestore의 `zones` 컬렉션을 구독하여 실시간으로 감시 구역 동기화.
+- **`dynamic_roi_extractor.py`**
+  - YOLOE-Seg 모델을 활용하여 실내 객체 외곽선을 따서 구역 자동 추천.
+- **`config.py`**
+  - 전역 임계값(Threshold), 경로, 스레드 안전 큐 관리.
 
-## 🔄 데이터 흐름도 (Data Flow)
+## 🔄 데이터 흐름
 
-1. **[Firestore Listener]** `zone_config_queue`에 구역 변경 이벤트 푸시 (Non-blocking)
-2. **[GStreamer Callback]** 카메라 영상 + 깊이 맵 추출 -> `yolo_queue` 푸시
-3. **[YOLO Worker]** 
-   - 큐에서 구역 설정 업데이트 (`zone_manager.process_queue_events`)
-   - NCNN 기반 객체 탐지 실행
-   - `zone_manager.check_zones` 호출
-4. **[Zone Manager]** 구역 조건 검사 완료 시 -> `vlm_queue` 푸시 + 캡처 이미지 저장
-5. **[VLM Worker]** Hailo-10h NPU를 활용하여 상황 요약 생성 및 출력
-    - NCNN 기반 YOLO26n 모델로 사람을 탐지.
-    - `ZoneManager`를 통해 각 구역의 진입/체류 조건을 검사.
+1. **[Orchestrator]** 앱의 명령을 받아 `main.py` 실행.
+2. **[Firestore Listener]** 사용자가 설정한 다각형 구역 정보를 실시간 로드.
+3. **[YOLO Worker]** 사람을 탐지하고 `ZoneManager`에 판단 위임.
+4. **[Zone Manager]** 다각형 내 체류 시간 및 바닥면 대비 Depth 차이 검증.
+5. **[VLM Worker]** 조건 충족 시 깨끗한 크롭 이미지를 NPU로 분석하여 한국어 요약 생성.
+6. **[Firebase Writer]** 분석 결과와 이미지를 Firestore에 저장 -> 앱 알림 전송.
 
 ## 🚀 실행 방법
 
-가상환경을 활성화한 후, 프로젝트 루트에서 모듈 형태로 실행합니다.
+가상환경 활성화 후 오케스트레이터를 실행하는 것이 권장됩니다.
 
 ```bash
-# 가상환경 활성화
 source .venv/bin/activate
-
-# 메인 엔진 실행
-python -m rabiguard.main
-
-# 자동 구역 설정 실행
-python -m rabiguard.dynamic_roi_extractor
+python3 rabiguard/orchestrator.py
 ```
 
 > **주의:** Firebase 연동을 위해 프로젝트 루트에 `firebase_key.json` 파일이 반드시 존재해야 합니다.
