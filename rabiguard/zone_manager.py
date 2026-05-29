@@ -2,15 +2,16 @@
 
 import time
 import queue
+import json
 from datetime import datetime
 
 import cv2
 import numpy as np
 
 try:
-    from .config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue
+    from .config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue, ZONES_CONFIG_PATH
 except ImportError:
-    from config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue
+    from config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue, ZONES_CONFIG_PATH
 
 
 # ------------------------------------------------------------
@@ -83,6 +84,17 @@ class Zone:
         self.min_people = int(data.get("min_people", 1))
         self.is_active = bool(data.get("is_active", True))
 
+    def to_dict(self):
+        """
+        객체 정보를 딕셔너리로 변환합니다. (파일 저장용)
+        """
+        return {
+            "polygon": self.polygon.tolist() if self.polygon.size > 0 else [],
+            "enter_threshold_sec": self.enter_threshold_sec,
+            "min_people": self.min_people,
+            "is_active": self.is_active
+        }
+
 
 # ------------------------------------------------------------
 # ZoneManager class
@@ -92,9 +104,21 @@ class ZoneManager:
     def __init__(self):
         self.zones = {}
 
+    def save_to_file(self):
+        """
+        현재 구역 정보를 zones_config.json 파일로 저장합니다.
+        """
+        try:
+            data = {z_id: z.to_dict() for z_id, z in self.zones.items()}
+            with open(ZONES_CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            print(f"💾 [ZoneManager] 구역 설정이 파일에 저장되었습니다: {ZONES_CONFIG_PATH}")
+        except Exception as e:
+            print(f"⚠️ [ZoneManager] 파일 저장 중 오류 발생: {e}")
+
     def process_queue_events(self, payload):
         """
-        Firestore listener가 넣어준 queue payload를 내부 zone 상태에 반영합니다.
+        Firestore listener가 넣어준 queue payload를 내부 zone 상태에 반영하고 파일로 저장합니다.
         """
         action = payload.get("action")
         zone_id = payload.get("zone_id")
@@ -102,6 +126,7 @@ class ZoneManager:
         if not action or not zone_id:
             return
 
+        changed = False
         if action == "update":
             data = payload.get("data", {})
 
@@ -111,11 +136,16 @@ class ZoneManager:
             else:
                 self.zones[zone_id] = Zone(zone_id, data)
                 print(f"➕ [ZoneManager] 구역 추가됨: {zone_id}")
+            changed = True
 
         elif action == "delete":
             if zone_id in self.zones:
                 del self.zones[zone_id]
                 print(f"❌ [ZoneManager] 구역 삭제됨: {zone_id}")
+                changed = True
+
+        if changed:
+            self.save_to_file()
 
     def check_zones(self, results, depth_map, frame_raw, color_conv, w_orig, h_orig):
         """
