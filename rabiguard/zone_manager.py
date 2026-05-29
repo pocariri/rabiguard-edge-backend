@@ -296,8 +296,8 @@ class ZoneManager:
 
                 # 구역(Zone) 주변 크롭 좌표 계산 (패딩 포함)
                 rx, ry, rw, rh = cv2.boundingRect(zone.polygon)
-                pad_x = int(rw * 0.2) + 20
-                pad_y = int(rh * 0.2) + 20
+                pad_x = 20
+                pad_y = 20
                 h, w = frame_bgr.shape[:2]
 
                 crop_x1 = max(0, rx - pad_x)
@@ -305,13 +305,19 @@ class ZoneManager:
                 crop_x2 = min(w, rx + rw + pad_x)
                 crop_y2 = min(h, ry + rh + pad_y)
 
-                # VLM용 context 이미지 생성 (전체 프레임에 오버레이 후 크롭)
-                ctx_full = frame_bgr.copy()
-                cv2.rectangle(ctx_full, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                cv2.polylines(ctx_full, [zone.polygon], True, (255, 0, 0), 2)
-                
-                # 구역 주변으로 크롭된 이미지
-                ctx_cropped = ctx_full[crop_y1:crop_y2, crop_x1:crop_x2]
+                # VLM용 클린 크롭 이미지 생성
+                ctx_cropped = frame_bgr[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+
+                # 디버그용 오버레이 이미지 생성 (로그 확인용)
+                ctx_overlay = ctx_cropped.copy()
+                cv2.rectangle(
+                    ctx_overlay,
+                    (x1 - crop_x1, y1 - crop_y1),
+                    (x2 - crop_x1, y2 - crop_y1),
+                    (0, 0, 255), 2
+                )
+                poly_offset = zone.polygon - [crop_x1, crop_y1]
+                cv2.polylines(ctx_overlay, [poly_offset.astype(np.int32)], True, (255, 0, 0), 2)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -319,7 +325,7 @@ class ZoneManager:
                 over_path = SAVE_DIR / f"{zone_id}_ID_{t_id}_{timestamp}_over.jpg"
 
                 cv2.imwrite(str(orig_path), frame_bgr)
-                cv2.imwrite(str(over_path), ctx_cropped)
+                cv2.imwrite(str(over_path), ctx_overlay)
 
                 try:
                     if vlm_queue.full():
@@ -331,7 +337,7 @@ class ZoneManager:
 
                     vlm_queue.put_nowait(
                         {
-                            "image": ctx_cropped,
+                            "image": ctx_cropped,  # VLM에는 선이 없는 깨끗한 이미지 전달
                             "track_id": t_id,
                             "p_depth": p_depth,
                             "z_depth": z_depth,
