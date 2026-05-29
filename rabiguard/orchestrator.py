@@ -24,11 +24,15 @@ except ImportError:
     from .config import stop_event
 
 # ------------------------------------------------------------
-# Process Management
+# State Management
 # ------------------------------------------------------------
+# 현재 감시(main.py)가 켜져 있어야 하는 상태인지 추적
+should_guard = False
+
 processes = {
     "guard": None,    # main.py
     "stream": None,   # webrtc_video.py
+    "roi": None,      # dynamic_roi_extractor.py
 }
 
 def kill_process(name):
@@ -48,16 +52,18 @@ def start_process(name, script_path):
     """새로운 서브프로세스를 실행합니다."""
     if processes.get(name) and processes[name].poll() is None:
         print(f"⚠️ [Orchestrator] {name} 프로세스가 이미 실행 중입니다.")
-        return
+        return processes[name]
 
     print(f"🚀 [Orchestrator] {name} 프로세스 시작: {script_path}")
-    # 가상환경(venv)이나 현재 파이썬 실행파일 경로를 사용
-    processes[name] = subprocess.Popen([sys.executable, str(script_path)])
+    proc = subprocess.Popen([sys.executable, str(script_path)])
+    processes[name] = proc
+    return proc
 
 # ------------------------------------------------------------
 # Firestore Command Callback
 # ------------------------------------------------------------
 def on_command_snapshot(col_snapshot, changes, read_time):
+    global should_guard
     for change in changes:
         try:
             if change.type.name == "ADDED":
@@ -69,20 +75,43 @@ def on_command_snapshot(col_snapshot, changes, read_time):
 
                 # 1. 침입 탐지 (Guard) 제어
                 if cmd_type == "start_guard":
+                    should_guard = True
+                    # 카메라 충돌 방지를 위해 실행 중인 다른 작업 종료
+                    if processes["stream"]:
+                        print("🔄 [Orchestrator] Guard 시작을 위해 스트리밍을 종료합니다.")
+                        kill_process("stream")
+                    if processes["roi"]:
+                        print("🔄 [Orchestrator] Guard 시작을 위해 ROI 추출을 종료합니다.")
+                        kill_process("roi")
+                    
                     start_process("guard", CURRENT_DIR / "main.py")
+
                 elif cmd_type == "stop_guard":
+                    should_guard = False
                     kill_process("guard")
 
                 # 2. 영상 스트리밍 (Stream) 제어
                 elif cmd_type == "start_stream":
+                    # 카메라 충돌 방지를 위해 Guard 종료
+                    if processes["guard"]:
+                        print("🔄 [Orchestrator] 스트리밍을 위해 Guard를 일시 중지합니다.")
+                        kill_process("guard")
                     start_process("stream", ROOT_DIR / "webRTC" / "webrtc_video.py")
+
                 elif cmd_type == "stop_stream":
                     kill_process("stream")
+                    # 스트리밍 종료 후 Guard 상태 복구
+                    if should_guard:
+                        print("🔄 [Orchestrator] 스트리밍이 종료되어 Guard를 재개합니다.")
+                        start_process("guard", CURRENT_DIR / "main.py")
 
                 # 3. ROI 자동 추출 (일회성)
                 elif cmd_type == "trigger_roi":
-                    print("🔍 [Orchestrator] ROI 추출 실행")
-                    subprocess.Popen([sys.executable, str(CURRENT_DIR / "dynamic_roi_extractor.py")])
+                    # 카메라 충돌 방지를 위해 Guard 종료
+                    if processes["guard"]:
+                        print("🔄 [Orchestrator] ROI 추출을 위해 Guard를 일시 중지합니다.")
+                        kill_process("guard")
+                    start_process("roi", CURRENT_DIR / "dynamic_roi_extractor.py")
 
                 # 명령 처리 후 문서 삭제
                 doc.reference.delete()
@@ -95,7 +124,7 @@ def on_command_snapshot(col_snapshot, changes, read_time):
 # ------------------------------------------------------------
 def main():
     print("=" * 70)
-    print("[MASTER ORCHESTRATOR STARTED]")
+    print("[MASTER ORCHESTRATOR STARTED (Auto-Switching Mode)]")
     print("감시 대상: main.py, webrtc_video.py, dynamic_roi_extractor.py")
     print("종료: Ctrl+C")
     print("=" * 70)
@@ -106,7 +135,15 @@ def main():
         print("✅ [Orchestrator] Firestore 'commands' 컬렉션 감시 시작")
 
         while not stop_event.is_set():
-            # 서브프로세스 상태 주기적 체크 (필요시 자동 재시작 로직 추가 가능)
+            # ROI 추출 프로세스 완료 체크
+            if processes["roi"] and processes["roi"].poll() is not None:
+                print("✅ [Orchestrator] ROI 추출 완료")
+                processes["roi"] = None
+                # ROI 추출 완료 후 Guard 상태 복구
+                if should_guard and not processes["stream"]:
+                    print("🔄 [Orchestrator] ROI 추출이 완료되어 Guard를 재개합니다.")
+                    start_process("guard", CURRENT_DIR / "main.py")
+            
             time.sleep(1)
 
     except KeyboardInterrupt:
@@ -115,6 +152,7 @@ def main():
         stop_event.set()
         kill_process("guard")
         kill_process("stream")
+        kill_process("roi")
         print("✅ [Orchestrator] 모든 자원 정리 완료")
 
 if __name__ == "__main__":
