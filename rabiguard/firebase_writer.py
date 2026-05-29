@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, messaging
 
 try:
     from config import FIREBASE_KEY_PATH
@@ -25,6 +25,27 @@ def init_firestore():
 
     return firestore.client()
 
+def get_fcm_token():
+    db = init_firestore()
+    doc = db.collection("fcm_tokens").document("device").get()
+    if doc.exists:
+        return doc.to_dict().get("token")
+    return None
+
+def send_fcm_notification(title: str, body: str):
+    token = get_fcm_token()
+    if not token:
+        print("FCM 토큰 없음, 알림 전송 스킵")
+        return
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body,
+        ),
+        token=token,
+    )
+    response = messaging.send(message)
+    print(f"FCM 알림 전송 완료: {response}")
 
 def save_vlm_result_to_firestore(
     english_text: str,
@@ -68,6 +89,12 @@ def save_vlm_result_to_firestore(
     event_doc_ref = zone_doc_ref.collection("events").document(event_doc_id)
     event_doc_ref.set(event_data)
 
+    # FCM 푸시 알림 전송
+    send_fcm_notification(
+        title="⚠️ 보안 알림",
+        body=korean_text,
+    )
+    
     return event_doc_ref.id
 
 
