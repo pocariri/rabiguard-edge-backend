@@ -295,7 +295,7 @@ def vlm_worker_thread(collection_name="vlm_events"):
                     frames=[vlm_img],
                     temperature=0.1,
                     seed=42,
-                    max_generated_tokens=80,
+                    max_generated_tokens=30,
                 )
 
                 english_result = clean_response(response)

@@ -53,6 +53,35 @@ def get_roi_depth(depth_map, x1, y1, x2, y2):
     return float(np.mean(roi_depth_values))
 
 
+def get_polygon_depth(depth_map, polygon):
+    """
+    다각형(Polygon) 영역 내의 평균 depth 계산.
+    polygon은 원본 640x480 좌표계 기준입니다.
+    """
+    if depth_map is None or len(polygon) == 0:
+        return 0.0
+
+    h, w = depth_map.shape
+
+    # 원본(640x480) -> Depth 맵 크기로 스케일링
+    scale_y = h / 480.0
+    scale_x = w / 640.0
+    scaled_poly = (polygon * [scale_x, scale_y]).astype(np.int32)
+
+    # 마스크 생성 및 다각형 채우기
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.fillPoly(mask, [scaled_poly], 255)
+
+    # 마스크 영역의 유효한(>0.1) depth 값만 추출
+    roi_depth_values = depth_map[mask > 0]
+    roi_depth_values = roi_depth_values[roi_depth_values > 0.1]
+
+    if len(roi_depth_values) == 0:
+        return 0.0
+
+    return float(np.mean(roi_depth_values))
+
+
 # ------------------------------------------------------------
 # Zone class
 # ------------------------------------------------------------
@@ -232,9 +261,7 @@ class ZoneManager:
                 x1, y1, x2, y2 = person["bbox"]
 
                 p_depth = get_roi_depth(depth_map, x1, y1, x2, y2)
-
-                rx, ry, rw, rh = cv2.boundingRect(zone.polygon)
-                z_depth = get_roi_depth(depth_map, rx, ry, rx + rw, ry + rh)
+                z_depth = get_polygon_depth(depth_map, zone.polygon)
 
                 if p_depth <= 0 or z_depth <= 0:
                     print(
@@ -269,8 +296,8 @@ class ZoneManager:
 
                 # 구역(Zone) 주변 크롭 좌표 계산 (패딩 포함)
                 rx, ry, rw, rh = cv2.boundingRect(zone.polygon)
-                pad_x = int(rw * 0.2) + 20
-                pad_y = int(rh * 0.2) + 20
+                pad_x = 20
+                pad_y = 20
                 h, w = frame_bgr.shape[:2]
 
                 crop_x1 = max(0, rx - pad_x)
@@ -278,13 +305,19 @@ class ZoneManager:
                 crop_x2 = min(w, rx + rw + pad_x)
                 crop_y2 = min(h, ry + rh + pad_y)
 
-                # VLM용 context 이미지 생성 (전체 프레임에 오버레이 후 크롭)
-                ctx_full = frame_bgr.copy()
-                cv2.rectangle(ctx_full, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                cv2.polylines(ctx_full, [zone.polygon], True, (255, 0, 0), 2)
-                
-                # 구역 주변으로 크롭된 이미지
-                ctx_cropped = ctx_full[crop_y1:crop_y2, crop_x1:crop_x2]
+                # VLM용 클린 크롭 이미지 생성
+                ctx_cropped = frame_bgr[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+
+                # 디버그용 오버레이 이미지 생성 (로그 확인용)
+                ctx_overlay = ctx_cropped.copy()
+                cv2.rectangle(
+                    ctx_overlay,
+                    (x1 - crop_x1, y1 - crop_y1),
+                    (x2 - crop_x1, y2 - crop_y1),
+                    (0, 0, 255), 2
+                )
+                poly_offset = zone.polygon - [crop_x1, crop_y1]
+                cv2.polylines(ctx_overlay, [poly_offset.astype(np.int32)], True, (255, 0, 0), 2)
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -292,7 +325,7 @@ class ZoneManager:
                 over_path = SAVE_DIR / f"{zone_id}_ID_{t_id}_{timestamp}_over.jpg"
 
                 cv2.imwrite(str(orig_path), frame_bgr)
-                cv2.imwrite(str(over_path), ctx_cropped)
+                cv2.imwrite(str(over_path), ctx_overlay)
 
                 try:
                     if vlm_queue.full():
@@ -304,7 +337,7 @@ class ZoneManager:
 
                     vlm_queue.put_nowait(
                         {
-                            "image": ctx_cropped,
+                            "image": ctx_cropped,  # VLM에는 선이 없는 깨끗한 이미지 전달
                             "track_id": t_id,
                             "p_depth": p_depth,
                             "z_depth": z_depth,

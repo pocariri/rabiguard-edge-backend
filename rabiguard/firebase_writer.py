@@ -63,7 +63,6 @@ def save_vlm_result_to_firestore(
     저장 구조:
     vlm_events/{zone_id}/events/{event_doc_id}
     """
-
     db = init_firestore()
 
     if not zone_id:
@@ -98,17 +97,72 @@ def save_vlm_result_to_firestore(
     return event_doc_ref.id
 
 
-def save_zones_to_firestore(zones_data, collection_name="zones"):
+def clear_firestore_collection(collection_name: str = "auto_zones"):
     """
-    추출된 Zone 정보를 Firestore에 저장합니다.
-    기존에 동일한 ID를 가진 문서는 덮어씌워집니다.
+    Firestore 컬렉션의 기존 문서를 모두 삭제합니다.
+
+    자동구역 객체 감지를 실행할 때마다
+    기존 자동구역 데이터를 초기화하기 위해 사용합니다.
     """
     db = init_firestore()
+
+    docs = db.collection(collection_name).stream()
+
     batch = db.batch()
+    deleted_count = 0
+
+    for doc in docs:
+        batch.delete(doc.reference)
+        deleted_count += 1
+
+        # Firestore batch 작업 제한을 고려하여 450개마다 commit
+        if deleted_count % 450 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    # 남은 삭제 작업 commit
+    if deleted_count % 450 != 0:
+        batch.commit()
+
+    print(f"🧹 [Firestore] '{collection_name}' 컬렉션 초기화 완료: {deleted_count}개 문서 삭제")
+
+
+def save_zones_to_firestore(
+    zones_data,
+    collection_name: str = "auto_zones",
+    reset_before_save: bool = False,
+):
+    """
+    추출된 Zone 정보를 Firestore에 저장합니다.
+
+    reset_before_save=True이면 저장 전에 기존 collection 문서를 모두 삭제합니다.
+    실행할 때마다 새로 인식된 객체만 Firestore에 남기고 싶을 때 사용합니다.
+    """
+    db = init_firestore()
+
+    if reset_before_save:
+        clear_firestore_collection(collection_name)
+
+    batch = db.batch()
+    saved_count = 0
 
     for zone_id, data in zones_data.items():
-        doc_ref = db.collection(collection_name).document(zone_id)
+        doc_ref = db.collection(collection_name).document(str(zone_id))
         batch.set(doc_ref, data)
+        saved_count += 1
 
-    batch.commit()
-    print(f"✅ [Firestore] {len(zones_data)}개의 구역이 '{collection_name}' 컬렉션에 저장되었습니다.")
+        # 저장도 450개마다 commit
+        if saved_count % 450 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    if saved_count % 450 != 0:
+        batch.commit()
+
+    if reset_before_save:
+        print(
+            f"✅ [Firestore] 기존 데이터를 초기화한 뒤 "
+            f"{len(zones_data)}개의 구역이 '{collection_name}' 컬렉션에 저장되었습니다."
+        )
+    else:
+        print(f"✅ [Firestore] {len(zones_data)}개의 구역이 '{collection_name}' 컬렉션에 저장되었습니다.")
