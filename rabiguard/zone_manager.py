@@ -53,6 +53,35 @@ def get_roi_depth(depth_map, x1, y1, x2, y2):
     return float(np.mean(roi_depth_values))
 
 
+def get_polygon_depth(depth_map, polygon):
+    """
+    다각형(Polygon) 영역 내의 평균 depth 계산.
+    polygon은 원본 640x480 좌표계 기준입니다.
+    """
+    if depth_map is None or len(polygon) == 0:
+        return 0.0
+
+    h, w = depth_map.shape
+
+    # 원본(640x480) -> Depth 맵 크기로 스케일링
+    scale_y = h / 480.0
+    scale_x = w / 640.0
+    scaled_poly = (polygon * [scale_x, scale_y]).astype(np.int32)
+
+    # 마스크 생성 및 다각형 채우기
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.fillPoly(mask, [scaled_poly], 255)
+
+    # 마스크 영역의 유효한(>0.1) depth 값만 추출
+    roi_depth_values = depth_map[mask > 0]
+    roi_depth_values = roi_depth_values[roi_depth_values > 0.1]
+
+    if len(roi_depth_values) == 0:
+        return 0.0
+
+    return float(np.mean(roi_depth_values))
+
+
 # ------------------------------------------------------------
 # Zone class
 # ------------------------------------------------------------
@@ -232,9 +261,7 @@ class ZoneManager:
                 x1, y1, x2, y2 = person["bbox"]
 
                 p_depth = get_roi_depth(depth_map, x1, y1, x2, y2)
-
-                rx, ry, rw, rh = cv2.boundingRect(zone.polygon)
-                z_depth = get_roi_depth(depth_map, rx, ry, rx + rw, ry + rh)
+                z_depth = get_polygon_depth(depth_map, zone.polygon)
 
                 if p_depth <= 0 or z_depth <= 0:
                     print(

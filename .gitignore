@@ -15,6 +15,9 @@ venv_hailo_apps/
 # mac finder 색인 파일(폴더) 무시
 .DS_Store
 
+# demo 폴더 설정: demo 폴더 안의 모든 내용물 무시
+demo/*
+
 # hailo-apps
 hailo-apps/*
 
