@@ -5,10 +5,85 @@ import sys
 import time
 import queue
 import threading
+import uuid
 from pathlib import Path
+from collections import deque
 
 import cv2
 import numpy as np
+from collections import deque
+
+# ------------------------------------------------------------
+# Snapshot Buffer
+# ------------------------------------------------------------
+
+# 최근 프레임들을 보관하는 링 버퍼 (10초 분량)
+snapshot_ring_buffer = deque(maxlen=20) # config 로드 전 임시 크기
+snapshot_lock = threading.Lock()
+
+def snapshot_recorder_worker():
+    """
+    이벤트가 발생하면 별도 스레드에서 '이후 10초'를 추가로 수집하고 저장합니다.
+    """
+    pending_snapshots = queue.Queue()
+
+    def saver_thread():
+        # 지연 로딩을 위해 안에서 임포트
+        from config import SNAPSHOT_DIR, SNAPSHOT_FPS, SNAPSHOT_AFTER_SEC
+        
+        # 실제 링 버퍼 크기 업데이트
+        from config import SNAPSHOT_BEFORE_SEC
+        global snapshot_ring_buffer
+        with snapshot_lock:
+            snapshot_ring_buffer = deque(snapshot_ring_buffer, maxlen=SNAPSHOT_BEFORE_SEC * SNAPSHOT_FPS)
+
+        while not stop_event.is_set():
+            try:
+                event_data = pending_snapshots.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            event_id = event_data["event_id"]
+            before_frames = event_data["before_frames"]
+            
+            # 이벤트 발생 후 10초 대기 (SNAPSHOT_AFTER_SEC)
+            after_frames = []
+            start_wait = time.time()
+            frame_interval = 1.0 / SNAPSHOT_FPS
+            
+            print(f"📸 [Snapshot] Event {event_id} - 'After' 수집 시작...")
+            
+            while time.time() - start_wait < SNAPSHOT_AFTER_SEC:
+                if stop_event.is_set():
+                    break
+                
+                with snapshot_lock:
+                    if snapshot_ring_buffer:
+                        after_frames.append(snapshot_ring_buffer[-1])
+                
+                time.sleep(frame_interval)
+            
+            # 저장
+            event_dir = SNAPSHOT_DIR / event_id
+            event_dir.mkdir(parents=True, exist_ok=True)
+            
+            total_frames = list(before_frames) + after_frames
+            print(f"💾 [Snapshot] Event {event_id} - 총 {len(total_frames)}장 저장 중...")
+            
+            for i, frame in enumerate(total_frames):
+                filename = event_dir / f"frame_{i:03d}.jpg"
+                cv2.imwrite(str(filename), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            
+            print(f"✅ [Snapshot] Event {event_id} 저장 완료: {event_dir}")
+            pending_snapshots.task_done()
+
+    t = threading.Thread(target=saver_thread, daemon=True)
+    t.start()
+
+    return pending_snapshots
+
+# 전역적으로 사용할 스냅샷 큐
+snapshot_event_queue = None
 
 # ------------------------------------------------------------
 # Environment settings
@@ -30,8 +105,101 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
 # ------------------------------------------------------------
+# Local modules
+# ------------------------------------------------------------
+
+try:
+    from .config import (
+        zone_config_queue, vlm_queue, stop_event, MODEL_PATH,
+        SNAPSHOT_DIR, SNAPSHOT_FPS, SNAPSHOT_BEFORE_SEC, SNAPSHOT_AFTER_SEC
+    )
+    from .zone_manager import ZoneManager
+    from .firestore_listener import start_firestore_listener
+    from .prompts import SYSTEM_PROMPT, USER_PROMPT
+    from .translator import translate_to_korean
+    from .firebase_writer import save_vlm_result_to_firestore
+
+except ImportError:
+    from config import (
+        zone_config_queue, vlm_queue, stop_event, MODEL_PATH,
+        SNAPSHOT_DIR, SNAPSHOT_FPS, SNAPSHOT_BEFORE_SEC, SNAPSHOT_AFTER_SEC
+    )
+    from zone_manager import ZoneManager
+    from firestore_listener import start_firestore_listener
+    from prompts import SYSTEM_PROMPT, USER_PROMPT
+    from translator import translate_to_korean
+    from firebase_writer import save_vlm_result_to_firestore
+
+# ------------------------------------------------------------
+# Snapshot Buffer
+# ------------------------------------------------------------
+
+# 최근 프레임들을 보관하는 링 버퍼 (10초 분량)
+snapshot_ring_buffer = deque(maxlen=SNAPSHOT_BEFORE_SEC * SNAPSHOT_FPS)
+snapshot_lock = threading.Lock()
+
+def snapshot_recorder_worker():
+    """
+    이벤트가 발생하면 별도 스레드에서 '이후 10초'를 추가로 수집하고 저장합니다.
+    """
+    pending_snapshots = queue.Queue()
+
+    def saver_thread():
+        while not stop_event.is_set():
+            try:
+                event_data = pending_snapshots.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            event_id = event_data["event_id"]
+            before_frames = event_data["before_frames"]
+            
+            # 이벤트 발생 후 10초 대기 (SNAPSHOT_AFTER_SEC)
+            after_frames = []
+            start_wait = time.time()
+            frame_interval = 1.0 / SNAPSHOT_FPS
+            
+            print(f"📸 [Snapshot] Event {event_id} - 'After' 수집 시작...")
+            
+            while time.time() - start_wait < SNAPSHOT_AFTER_SEC:
+                if stop_event.is_set():
+                    break
+                
+                # 메인 루프에서 들어오는 최신 프레임을 여기서 가로채거나 
+                # 전역 버퍼의 끝부분을 일정 간격으로 복사
+                with snapshot_lock:
+                    if snapshot_ring_buffer:
+                        after_frames.append(snapshot_ring_buffer[-1])
+                
+                time.sleep(frame_interval)
+            
+            # 저장
+            event_dir = SNAPSHOT_DIR / event_id
+            event_dir.mkdir(parents=True, exist_ok=True)
+            
+            total_frames = list(before_frames) + after_frames
+            print(f"💾 [Snapshot] Event {event_id} - 총 {len(total_frames)}장 저장 중...")
+            
+            for i, frame in enumerate(total_frames):
+                filename = event_dir / f"frame_{i:03d}.jpg"
+                cv2.imwrite(str(filename), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            
+            print(f"✅ [Snapshot] Event {event_id} 저장 완료: {event_dir}")
+            pending_snapshots.task_done()
+
+    # 실제 저장을 담당하는 서브 스레드 시작
+    t = threading.Thread(target=saver_thread, daemon=True)
+    t.start()
+
+    return pending_snapshots
+
+# 전역적으로 사용할 스냅샷 큐
+snapshot_event_queue = None
+
+# ------------------------------------------------------------
 # YOLO
 # ------------------------------------------------------------
+...
 
 try:
     from ultralytics import YOLO
@@ -509,6 +677,31 @@ def app_callback(element, buffer, user_data):
 
         curr_time = time.time()
 
+        # [NEW] Snapshot Ring Buffer 업데이트 (설정된 FPS 간격으로)
+        from config import SNAPSHOT_FPS
+        frame_interval = 1.0 / SNAPSHOT_FPS
+        
+        # 마지막 저장 시간 기록을 위한 정적 변수 역할
+        if not hasattr(app_callback, "last_snapshot_time"):
+            app_callback.last_snapshot_time = 0
+            
+        if curr_time - app_callback.last_snapshot_time >= frame_interval:
+            # 해상도 정보 가져오기
+            if user_data.caps_info is None:
+                user_data.caps_info = get_caps_from_pad_fixed(element.get_static_pad("sink"))
+            
+            fmt, w, h = user_data.caps_info
+            if fmt and w and h:
+                frame_raw = get_numpy_from_buffer(buffer, fmt, w, h)
+                if frame_raw is not None:
+                    # BGR로 변환하여 링 버퍼에 저장 (저장 시 CPU 절약)
+                    # 실제 변환은 YOLO worker에서 color_conv를 참고하지만, 
+                    # 여기서는 범용적으로 BGR로 저장
+                    frame_bgr = cv2.cvtColor(frame_raw, cv2.COLOR_RGB2BGR)
+                    with snapshot_lock:
+                        snapshot_ring_buffer.append(frame_bgr)
+                    app_callback.last_snapshot_time = curr_time
+
         if not user_data.yolo_ready:
             user_data.total_frames += 1
             user_data.status_frame_count += 1
@@ -617,8 +810,17 @@ def main():
     )
     vlm_thread.start()
 
+    # [NEW] Snapshot recorder worker 시작
+    global snapshot_event_queue
+    snapshot_event_queue = snapshot_recorder_worker()
+
     # YOLO callback user data
     user_data = DynamicAppCallback(model)
+
+    # ZoneManager에 스냅샷 큐 전달 (중요: user_data 내부의 zone_manager 인스턴스에 접근)
+    # user_data(DynamicAppCallback)가 내부적으로 zone_manager를 생성하므로 
+    # yolo_worker 실행 전에 큐를 설정해주어야 함.
+    user_data.snapshot_event_queue = snapshot_event_queue
 
     # Depth app
     app = HeadlessDepthApp(app_callback, user_data)

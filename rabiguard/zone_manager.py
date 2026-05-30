@@ -284,11 +284,12 @@ class ZoneManager:
 
                 state["notified"] = True
 
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                # 고유 이벤트 ID 생성
+                event_id = f"{timestamp}_{uuid.uuid4().hex[:6]}"
+
                 print(
-                    f"✅ [{zone_id}] ID {t_id} 조건 충족! "
-                    f"체류={zone.enter_threshold_sec}s, "
-                    f"인원={len(people_in_zone)}명, "
-                    f"depth diff={diff:.2f}"
+                    f"✅ [{zone_id}] ID {t_id} 조건 충족! EventID: {event_id}"
                 )
 
                 # frame_raw를 BGR로 변환
@@ -319,13 +320,25 @@ class ZoneManager:
                 poly_offset = zone.polygon - [crop_x1, crop_y1]
                 cv2.polylines(ctx_overlay, [poly_offset.astype(np.int32)], True, (255, 0, 0), 2)
 
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
                 orig_path = SAVE_DIR / f"{zone_id}_ID_{t_id}_{timestamp}_orig.jpg"
                 over_path = SAVE_DIR / f"{zone_id}_ID_{t_id}_{timestamp}_over.jpg"
 
                 cv2.imwrite(str(orig_path), frame_bgr)
                 cv2.imwrite(str(over_path), ctx_overlay)
+
+                # 스냅샷 캡처 요청 (main.py의 전역 버퍼 사용)
+                if self.snapshot_event_queue:
+                    try:
+                        # main.py에서 정의될 전역 변수들에 접근
+                        import main
+                        with main.snapshot_lock:
+                            before_frames = list(main.snapshot_ring_buffer)
+                        
+                        self.snapshot_event_queue.put(
+                            {"event_id": event_id, "before_frames": before_frames}
+                        )
+                    except Exception as e:
+                        print(f"⚠️ [Snapshot Queue Error] {e}")
 
                 try:
                     if vlm_queue.full():
@@ -337,11 +350,12 @@ class ZoneManager:
 
                     vlm_queue.put_nowait(
                         {
-                            "image": ctx_cropped,  # VLM에는 선이 없는 깨끗한 이미지 전달
+                            "image": ctx_cropped,
                             "track_id": t_id,
                             "p_depth": p_depth,
                             "z_depth": z_depth,
                             "zone_id": zone_id,
+                            "event_id": event_id,
                             "image_path": str(over_path),
                             "original_image_path": str(orig_path),
                             "people_count": len(people_in_zone),

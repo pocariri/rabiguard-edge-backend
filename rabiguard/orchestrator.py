@@ -33,6 +33,7 @@ processes = {
     "guard": None,    # main.py
     "stream": None,   # webrtc_video.py
     "roi": None,      # dynamic_roi_extractor.py
+    "data": None,     # webrtc_data_transfer.py
 }
 
 def kill_process(name):
@@ -48,14 +49,18 @@ def kill_process(name):
         print(f"✅ [Orchestrator] {name} 종료 완료")
     processes[name] = None
 
-def start_process(name, script_path):
+def start_process(name, script_path, args=None):
     """새로운 서브프로세스를 실행합니다."""
     if processes.get(name) and processes[name].poll() is None:
         print(f"⚠️ [Orchestrator] {name} 프로세스가 이미 실행 중입니다.")
         return processes[name]
 
-    print(f"🚀 [Orchestrator] {name} 프로세스 시작: {script_path}")
-    proc = subprocess.Popen([sys.executable, str(script_path)])
+    cmd = [sys.executable, str(script_path)]
+    if args:
+        cmd.extend(args)
+
+    print(f"🚀 [Orchestrator] {name} 프로세스 시작: {script_path} (args: {args})")
+    proc = subprocess.Popen(cmd)
     processes[name] = proc
     return proc
 
@@ -78,10 +83,8 @@ def on_command_snapshot(col_snapshot, changes, read_time):
                     should_guard = True
                     # 카메라 충돌 방지를 위해 실행 중인 다른 작업 종료
                     if processes["stream"]:
-                        print("🔄 [Orchestrator] Guard 시작을 위해 스트리밍을 종료합니다.")
                         kill_process("stream")
                     if processes["roi"]:
-                        print("🔄 [Orchestrator] Guard 시작을 위해 ROI 추출을 종료합니다.")
                         kill_process("roi")
                     
                     start_process("guard", CURRENT_DIR / "main.py")
@@ -92,26 +95,34 @@ def on_command_snapshot(col_snapshot, changes, read_time):
 
                 # 2. 영상 스트리밍 (Stream) 제어
                 elif cmd_type == "start_stream":
-                    # 카메라 충돌 방지를 위해 Guard 종료
                     if processes["guard"]:
-                        print("🔄 [Orchestrator] 스트리밍을 위해 Guard를 일시 중지합니다.")
                         kill_process("guard")
                     start_process("stream", ROOT_DIR / "webRTC" / "webrtc_video.py")
 
                 elif cmd_type == "stop_stream":
                     kill_process("stream")
-                    # 스트리밍 종료 후 Guard 상태 복구
                     if should_guard:
-                        print("🔄 [Orchestrator] 스트리밍이 종료되어 Guard를 재개합니다.")
                         start_process("guard", CURRENT_DIR / "main.py")
 
-                # 3. ROI 자동 추출 (일회성)
+                # 3. ROI 자동 추출
                 elif cmd_type == "trigger_roi":
-                    # 카메라 충돌 방지를 위해 Guard 종료
                     if processes["guard"]:
-                        print("🔄 [Orchestrator] ROI 추출을 위해 Guard를 일시 중지합니다.")
                         kill_process("guard")
                     start_process("roi", CURRENT_DIR / "dynamic_roi_extractor.py")
+
+                # 4. WebRTC 데이터 전송 (스냅샷 다운로드)
+                elif cmd_type == "download_event":
+                    event_id = cmd_data.get("event_id")
+                    if event_id:
+                        # 데이터 전송은 파일을 읽는 작업이므로 감시와 병행 가능하지만,
+                        # 시그널링 채널 혼선을 막기 위해 스트리밍이 켜져있다면 종료 고려
+                        if processes["stream"]:
+                            print("🔄 [Orchestrator] 데이터 전송을 위해 스트리밍을 종료합니다.")
+                            kill_process("stream")
+                        
+                        start_process("data", ROOT_DIR / "webRTC" / "webrtc_data_transfer.py", [event_id])
+                    else:
+                        print("⚠️ [Orchestrator] download_event 명령에 event_id가 없습니다.")
 
                 # 명령 처리 후 문서 삭제
                 doc.reference.delete()
@@ -125,7 +136,7 @@ def on_command_snapshot(col_snapshot, changes, read_time):
 def main():
     print("=" * 70)
     print("[MASTER ORCHESTRATOR STARTED (Auto-Switching Mode)]")
-    print("감시 대상: main.py, webrtc_video.py, dynamic_roi_extractor.py")
+    print("감시 대상: main.py, webrtc_video.py, dynamic_roi_extractor.py, webrtc_data_transfer.py")
     print("종료: Ctrl+C")
     print("=" * 70)
 
@@ -139,10 +150,14 @@ def main():
             if processes["roi"] and processes["roi"].poll() is not None:
                 print("✅ [Orchestrator] ROI 추출 완료")
                 processes["roi"] = None
-                # ROI 추출 완료 후 Guard 상태 복구
                 if should_guard and not processes["stream"]:
-                    print("🔄 [Orchestrator] ROI 추출이 완료되어 Guard를 재개합니다.")
                     start_process("guard", CURRENT_DIR / "main.py")
+            
+            # 데이터 전송 프로세스 완료 체크
+            if processes["data"] and processes["data"].poll() is not None:
+                print("✅ [Orchestrator] 데이터 전송 완료")
+                processes["data"] = None
+                # 전송 완료 후 원래 상태 복구 필요 시 로직 추가 가능
             
             time.sleep(1)
 
@@ -153,6 +168,7 @@ def main():
         kill_process("guard")
         kill_process("stream")
         kill_process("roi")
+        kill_process("data")
         print("✅ [Orchestrator] 모든 자원 정리 완료")
 
 if __name__ == "__main__":
