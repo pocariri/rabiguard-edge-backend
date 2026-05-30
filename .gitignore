@@ -18,6 +18,8 @@ venv_hailo_apps/
 # demo 폴더 설정: demo 폴더 안의 모든 내용물 무시
 demo/*
 
+zones_config.json
+
 # hailo-apps
 hailo-apps/*
 
