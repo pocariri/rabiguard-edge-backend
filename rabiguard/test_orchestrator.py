@@ -29,13 +29,17 @@ def init_db():
 # ------------------------------------------------------------
 # Command Sender
 # ------------------------------------------------------------
-def send_command(db, cmd_type):
+def send_command(db, cmd_type, payload=None):
     print(f"\n📤 Sending command: '{cmd_type}' to Firestore...")
     try:
-        doc_ref = db.collection("commands").add({
+        data = {
             "type": cmd_type,
             "timestamp": firestore.SERVER_TIMESTAMP
-        })
+        }
+        if payload:
+            data.update(payload)
+            
+        doc_ref = db.collection("commands").add(data)
         # Firestore returns (timestamp, doc_ref)
         print(f"✅ Command sent successfully! (Doc ID: {doc_ref[1].id})")
         print("💡 Wait for the Orchestrator to process and delete this document.")
@@ -60,11 +64,13 @@ def main():
         print("  4. Stop Stream")
         print("\n [ROI Controls]")
         print("  5. Trigger ROI Extraction")
+        print("\n [Data Controls]")
+        print("  6. Download Event Snapshots (WebRTC DataChannel)")
         print("\n [System]")
         print("  0. Exit")
-        print("="*45)
+        print("=" * 45)
         
-        choice = input("\nSelect an option (0-5): ").strip()
+        choice = input("\nSelect an option (0-6): ").strip()
         
         if choice == '1':
             send_command(db, "start_guard")
@@ -76,6 +82,12 @@ def main():
             send_command(db, "stop_stream")
         elif choice == '5':
             send_command(db, "trigger_roi")
+        elif choice == '6':
+            event_id = input("Enter Event ID to download: ").strip()
+            if event_id:
+                send_command(db, "download_event", {"event_id": event_id})
+            else:
+                print("⚠️ Event ID is required.")
         elif choice == '0':
             print("👋 Exiting test script.")
             break
