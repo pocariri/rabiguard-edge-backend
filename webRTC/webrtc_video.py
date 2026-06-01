@@ -1,79 +1,130 @@
+# webrtc_video.py
 import asyncio
+import threading
+import queue
 import cv2
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
-from aiortc.contrib.media import MediaRelay
-from av import VideoFrame
-from firebase_admin import credentials, db, initialize_app
 import numpy as np
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from av import VideoFrame
+from firebase_admin import db
 
-## 1. 초기화
-cred = credentials.Certificate("/home/rafour/workspace/seungmin/rafour-app/serviceAccountKey.json")
-initialize_app(cred, {'databaseURL': 'https://rafour-7f37f-default-rtdb.asia-southeast1.firebasedatabase.app/'})
+# ------------------------------------------------------------
+# 공유 데이터 (main.py와 공유)
+# ------------------------------------------------------------
 
-# 2. 카메라 영상 트랙 정의 클래스
-class CameraStreamTrack(VideoStreamTrack):
-    def __init__(self):
-        super().__init__()
-        self.cap = cv2.VideoCapture(0) # 0번 카메라 연결
+# GStreamer 프레임 공유
+shared_frame = None
+shared_frame_lock = threading.Lock()
 
-        # 해상도를 명시적으로 지정하면 스트림이 더 안정적
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
+# 이미지 전송 큐 (main.py에서 이미지 경로 넣으면 Data Channel로 전송)
+image_send_queue = queue.Queue()
+
+def update_shared_frame(frame):
+    global shared_frame
+    with shared_frame_lock:
+        shared_frame = frame.copy()
+
+# ------------------------------------------------------------
+# 공유 프레임 트랙
+# ------------------------------------------------------------
+
+class SharedFrameTrack(VideoStreamTrack):
     async def recv(self):
         pts, time_base = await self.next_timestamp()
+        with shared_frame_lock:
+            frame = shared_frame.copy() if shared_frame is not None else np.zeros((480, 640, 3), dtype=np.uint8)
         
-        # 카메라에서 프레임 읽기 시도
-        ret, frame = self.cap.read()
-
-        # 프레임 획득 실패 시 검은 화면이라도 생성 (None 에러 방지 핵심)
-        if not ret or frame is None:
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
-
-        # 중요: OpenCV(BGR)를 PyAV가 선호하는 RGB로 확실히 변환
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # 프레임 생성 및 속성 부여 (이 부분이 정확해야 에러가 안 남)
         new_frame = VideoFrame.from_ndarray(img, format="rgb24")
         new_frame.pts = pts
         new_frame.time_base = time_base
-        
         return new_frame
-	
-    # 종료 시 카메라 해제 (선택 사항)
-    def __del__(self):
-        if hasattr(self, 'cap') and self.cap.isOpened():
-            self.cap.release()
+
+# ------------------------------------------------------------
+# WebRTC
+# ------------------------------------------------------------
 
 pc = RTCPeerConnection()
-relay = MediaRelay()
+data_channel = None
+main_loop = None
+webrtc_app = None
 
-# 3. Answer 생성 함수 (여기에 트랙 추가 로직 포함)
 async def create_answer(offer_sdp):
+    global data_channel
     try:
-        print("=== Offer SDP ===")
-        print(offer_sdp)
-        print("=================")
-        # offer를 먼저 세팅한 다음에 트랙 추가
         offer = RTCSessionDescription(sdp=offer_sdp, type='offer')
-        await pc.setRemoteDescription(offer)        
-        
-        # 카메라 트랙을 연결에 추가 (비디오 전송 시작)
-        camera_track = CameraStreamTrack()
-        pc.addTrack(camera_track)
-        print("비디오 트랙이 연결에 추가되었습니다.")
+        await pc.setRemoteDescription(offer)
+
+        data_channel = pc.createDataChannel("image")
+        print("[WebRTC] Data Channel 생성 완료")
+
+        # Data Channel 열렸을 때 큐에 있는 이미지 전송
+        def on_data_channel_open():
+            print("[WebRTC] Data Channel 열림, 이미지 전송 시작")
+            asyncio.ensure_future(image_sender_loop())
+
+        data_channel.on("open", on_data_channel_open)
+
+        pc.addTrack(SharedFrameTrack())
+        print("[WebRTC] 비디오 트랙 추가 완료")
 
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
-        db.reference('signaling/smart_cctv/answer').set({
+
+        from firebase_admin import db as webrtc_db
+        webrtc_db.reference('signaling/smart_cctv/answer', app=webrtc_app).set({
             'sdp': pc.localDescription.sdp,
             'type': pc.localDescription.type
         })
-        print("영상 정보를 담은 Answer 전송 완료!")
+        print("[WebRTC] Answer 전송 완료")
+
     except Exception as e:
         import traceback
-        traceback.print_exc()  # 이걸로 전체 스택 트레이스 출력
-        print(f"오류 발생: {e}")
+        traceback.print_exc()
+        print(f"[WebRTC] 오류: {e}")
+
+async def image_sender_loop():
+    """이미지 전송 큐를 감시하며 Data Channel로 전송"""
+    print("[Data Channel] 이미지 전송 루프 시작")
+    while True:
+        try:
+            image_path = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: image_send_queue.get(timeout=1.0)
+            )
+            await send_image_via_data_channel(image_path)
+        except queue.Empty:
+            continue
+        except Exception as e:
+            print(f"[Data Channel] 전송 오류: {e}")
+
+async def send_image_via_data_channel(image_path: str):
+    """이미지 파일을 읽어서 Data Channel로 전송"""
+    global data_channel
+    if data_channel is None or data_channel.readyState != "open":
+        print("[Data Channel] 채널이 열려있지 않음")
+        return
+
+    try:
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+
+        # 청크 단위로 전송 (64KB)
+        chunk_size = 64 * 1024
+        total_chunks = (len(image_data) + chunk_size - 1) // chunk_size
+
+        # 시작 신호 전송
+        data_channel.send(f"START:{total_chunks}")
+
+        for i in range(total_chunks):
+            chunk = image_data[i * chunk_size:(i + 1) * chunk_size]
+            data_channel.send(chunk)
+
+        # 완료 신호 전송
+        data_channel.send("END")
+        print(f"[Data Channel] 이미지 전송 완료: {image_path}")
+
+    except Exception as e:
+        print(f"[Data Channel] 이미지 전송 실패: {e}")
 
 def on_offer_received(event):
     if event.data and isinstance(event.data, dict):
@@ -82,20 +133,28 @@ def on_offer_received(event):
             print("\n[감지] 새로운 Offer 수신")
             asyncio.run_coroutine_threadsafe(create_answer(offer_sdp), main_loop)
 
-# 메인 실행부
-print("WebRTC 시그널링 대기 중... (Ctrl+C로 종료)")
+def start_webrtc_server():
+    global main_loop, webrtc_app
 
-# 1. 메인 루프를 미리 생성합니다.
-main_loop = asyncio.new_event_loop()
-asyncio.set_event_loop(main_loop)
+    import firebase_admin
+    from firebase_admin import credentials
 
-# 2. 리스너 등록
-db.reference('signaling/smart_cctv/offer').listen(on_offer_received)
+    try:
+        webrtc_app = firebase_admin.get_app('webrtc')
+    except ValueError:
+        cred = credentials.Certificate("/home/rafour/workspace/seungmin/rafour-app/serviceAccountKey.json")
+        webrtc_app = firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://rafour-7f37f-default-rtdb.asia-southeast1.firebasedatabase.app/'
+        }, name='webrtc')
 
-# 3. 루프 실행
-try:
+    from firebase_admin import db as webrtc_db
+    
+    # 시작할 때 기존 signaling 데이터 초기화
+    webrtc_db.reference('signaling/smart_cctv', app=webrtc_app).delete()
+    print("[WebRTC] 기존 signaling 데이터 초기화 완료")
+
+    main_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(main_loop)
+    webrtc_db.reference('signaling/smart_cctv/offer', app=webrtc_app).listen(on_offer_received)
+    print("[WebRTC] 시그널링 대기 중...")
     main_loop.run_forever()
-except KeyboardInterrupt:
-    print("\n정지합니다...")
-finally:
-    main_loop.run_until_complete(pc.close())

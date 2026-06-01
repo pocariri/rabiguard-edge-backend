@@ -9,6 +9,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+sys.path.insert(0, '/media/rafour/USB_DRIVE/seungmin/rafour-app/webRTC')
+from webrtc_video import start_webrtc_server, update_shared_frame, image_send_queue
 
 # ------------------------------------------------------------
 # Environment settings
@@ -325,6 +327,9 @@ def vlm_worker_thread(collection_name="vlm_events"):
 
                     print(f"✅ [Firestore] 저장 완료. Document ID: {doc_id}")
 
+                    # Data Channel로 이미지 전송
+                    image_send_queue.put(str(image_path))
+
                 except Exception as e:
                     print(f"⚠️ [Firestore Save Error] {e}")
 
@@ -540,6 +545,10 @@ def app_callback(element, buffer, user_data):
         if frame_raw is None:
             return
 
+        # WebRTC에 프레임 공유
+        if frame_raw is not None:
+            update_shared_frame(frame_raw)
+
         roi = hailo.get_roi_from_buffer(buffer)
         depth_objs = roi.get_objects_typed(hailo.HAILO_DEPTH_MASK)
 
@@ -616,6 +625,13 @@ def main():
         daemon=True,
     )
     vlm_thread.start()
+
+    # WebRTC 서버 시작
+    webrtc_thread = threading.Thread(
+        target=start_webrtc_server,
+        daemon=True,
+    )
+    webrtc_thread.start()
 
     # YOLO callback user data
     user_data = DynamicAppCallback(model)
