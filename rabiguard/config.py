@@ -19,6 +19,12 @@ stop_event = threading.Event()
 DEPTH_SIMILARITY_THRESHOLD = 0.5
 YOLO_INPUT_SIZE = 320
 
+# Snapshot Recording Settings
+SNAPSHOT_FPS = 2  # 1초에 2장 저장
+SNAPSHOT_BEFORE_SEC = 10
+SNAPSHOT_AFTER_SEC = 10
+SNAPSHOT_BUFFER_SIZE = (SNAPSHOT_BEFORE_SEC + SNAPSHOT_AFTER_SEC) * SNAPSHOT_FPS
+
 # ------------------------------------------------------------
 # Paths
 # ------------------------------------------------------------
@@ -35,6 +41,10 @@ YOLOE_MODEL_PATH = MODEL_DIR / "yoloe-26n-seg-pf.pt"
 
 SAVE_DIR = ROOT_DIR / "_outputs" / "vlm_captures"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Snapshot 저장 경로
+SNAPSHOT_DIR = ROOT_DIR / "_outputs" / "snapshots"
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ROI Extractor 관련 경로
 TARGET_OBJECTS_PATH = RABIGUARD_DIR / "target_objects.txt"
