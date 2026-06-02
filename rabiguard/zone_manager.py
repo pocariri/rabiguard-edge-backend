@@ -7,6 +7,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+import uuid
 
 try:
     from .config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue, ZONES_CONFIG_PATH
@@ -132,6 +133,7 @@ class Zone:
 class ZoneManager:
     def __init__(self):
         self.zones = {}
+        self.snapshot_event_queue = None
 
     def save_to_file(self):
         """

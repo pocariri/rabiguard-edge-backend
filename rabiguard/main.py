@@ -266,6 +266,7 @@ def vlm_worker_thread(collection_name="vlm_events"):
                 image_path = item.get("image_path", f"zone_{zone_id}_track_{track_id}")
                 people_count = item.get("people_count", 1)
                 enter_threshold_sec = item.get("enter_threshold_sec", 0)
+                event_id = item.get("event_id", "")
 
                 vlm_img = cv2.resize(context_img, (336, 336), interpolation=cv2.INTER_LINEAR)
                 if len(vlm_img.shape) == 3 and vlm_img.shape[2] == 3:
@@ -319,6 +320,7 @@ def vlm_worker_thread(collection_name="vlm_events"):
                         track_id=track_id,
                         person_depth=float(p_depth),
                         zone_depth=float(z_depth),
+                        event_id=event_id,
                     )
                     print(f"✅ [Firestore] 저장 완료. Document ID: {doc_id}")
 
@@ -372,6 +374,12 @@ class DynamicAppCallback(app_callback_class):
     def yolo_worker(self):
         print("✅ [YOLO Worker] 시작 (Dynamic Mode)!")
         zone_manager = ZoneManager()
+
+        # snapshot_event_queue가 설정될 때까지 대기
+        while self.snapshot_event_queue is None:
+            time.sleep(0.1)
+        
+        zone_manager.snapshot_event_queue = self.snapshot_event_queue
         last_yolo_time = time.time()
         yolo_count = 0
 

@@ -32,7 +32,7 @@ def get_fcm_token():
         return doc.to_dict().get("token")
     return None
 
-def send_fcm_notification(title: str, body: str):
+def send_fcm_notification(title: str, body: str, event_id: str = ""):
     token = get_fcm_token()
     if not token:
         print("FCM 토큰 없음, 알림 전송 스킵")
@@ -42,6 +42,7 @@ def send_fcm_notification(title: str, body: str):
             title=title,
             body=body,
         ),
+        data={"event_id": event_id},  # ← 추가
         token=token,
     )
     response = messaging.send(message)
@@ -56,6 +57,7 @@ def save_vlm_result_to_firestore(
     track_id: int | str = "",
     person_depth: float | None = None,
     zone_depth: float | None = None,
+    event_id: str = "",
 ):
     """
     VLM 분석 결과를 Firestore에 저장합니다.
@@ -92,6 +94,7 @@ def save_vlm_result_to_firestore(
     send_fcm_notification(
         title="⚠️ 보안 알림",
         body=korean_text,
+        event_id=event_id,
     )
     
     return event_doc_ref.id

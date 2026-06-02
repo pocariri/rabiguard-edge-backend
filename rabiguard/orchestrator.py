@@ -119,7 +119,8 @@ def on_command_snapshot(col_snapshot, changes, read_time):
                         if processes["stream"]:
                             print("🔄 [Orchestrator] 데이터 전송을 위해 스트리밍을 종료합니다.")
                             kill_process("stream")
-                        
+
+                        kill_process("data")
                         start_process("data", ROOT_DIR / "webRTC" / "webrtc_data_transfer.py", [event_id])
                     else:
                         print("⚠️ [Orchestrator] download_event 명령에 event_id가 없습니다.")
