@@ -48,6 +48,12 @@ except Exception as e:
 pc = RTCPeerConnection()
 data_channel = None
 
+@pc.on("datachannel")
+def on_datachannel(channel):
+    global data_channel
+    data_channel = channel
+    print(f"🔗 [DataTransfer] 데이터 채널 연결됨: {channel.label}")
+    
 async def send_file(channel, file_path):
     """파일 하나를 조각내어 데이터 채널로 전송합니다."""
     filename = file_path.name
@@ -62,10 +68,16 @@ async def send_file(channel, file_path):
     }))
     
     # 2. 실제 데이터 전송 (16KB 단위 Chunking)
-    chunk_size = 16384
+    chunk_size = 8192  # 16384 → 8192
+    BUFFER_THRESHOLD = 65536  # 64KB
+
     for i in range(0, filesize, chunk_size):
         chunk = file_bytes[i:i + chunk_size]
+        # 버퍼가 차있으면 비울 때까지 대기
+        while channel.bufferedAmount > BUFFER_THRESHOLD:
+            await asyncio.sleep(0.01)
         channel.send(chunk)
+        await asyncio.sleep(0.05)
         if channel.bufferedAmount > channel.bufferedAmountLowThreshold:
             await asyncio.sleep(0.01)
             
@@ -87,6 +99,9 @@ async def start_transfer(event_id):
 
     while data_channel is None or data_channel.readyState != "open":
         await asyncio.sleep(0.1)
+
+    # 채널 안정화 대기
+    await asyncio.sleep(1.0)	
 
     data_channel.send(json.dumps({
         "type": "transfer_start",
@@ -117,13 +132,7 @@ async def create_answer(offer_sdp, event_id):
             'type': pc.localDescription.type
         })
         print("📡 [DataTransfer] Answer 전송 완료. 클라이언트 연결 대기 중...")
-        
-        @pc.on("datachannel")
-        def on_datachannel(channel):
-            global data_channel
-            data_channel = channel
-            print(f"🔗 [DataTransfer] 데이터 채널 연결됨: {channel.label}")
-            asyncio.create_task(start_transfer(event_id))
+        asyncio.ensure_future(start_transfer(event_id))        
 
     except Exception as e:
         print(f"❌ [DataTransfer] Answer 생성 중 오류: {e}")
@@ -148,6 +157,10 @@ if __name__ == "__main__":
 
     main_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(main_loop)
+
+    # data_offer 리스너 등록 전에 ready 신호 저장
+    db.reference('signaling/smart_cctv/data_status').set('ready')
+    print("✅ [DataTransfer] Ready 신호 전송 완료")
 
     db.reference('signaling/smart_cctv/data_offer').listen(
         lambda e: on_offer_received(e, target_event_id)
