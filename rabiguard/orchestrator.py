@@ -125,6 +125,12 @@ def on_command_snapshot(col_snapshot, changes, read_time):
                     else:
                         print("⚠️ [Orchestrator] download_event 명령에 event_id가 없습니다.")
 
+                elif cmd_type == "download_image":
+                    image_path = cmd_data.get("image_path")
+                    if image_path:
+                        kill_process("data")
+                        start_process("data", ROOT_DIR / "webRTC" / "webrtc_data_transfer.py", [image_path])
+
                 # 명령 처리 후 문서 삭제
                 doc.reference.delete()
 
@@ -151,6 +157,13 @@ def main():
             if processes["roi"] and processes["roi"].poll() is not None:
                 print("✅ [Orchestrator] ROI 추출 완료")
                 processes["roi"] = None
+
+                # orig.jpg 전송 명령 자동 실행
+                from config import EXTRACTED_ROIS_DIR
+                orig_path = str(EXTRACTED_ROIS_DIR / "orig.jpg")
+                kill_process("data")
+                start_process("data", ROOT_DIR / "webRTC" / "webrtc_data_transfer.py", [orig_path])
+
                 if should_guard and not processes["stream"]:
                     start_process("guard", CURRENT_DIR / "main.py")
             

@@ -89,23 +89,32 @@ async def start_transfer(event_id):
     """이벤트 폴더의 모든 이미지를 전송합니다."""
     global data_channel
     
-    event_path = SNAPSHOT_DIR / event_id
-    if not event_path.exists():
-        print(f"❌ [DataTransfer] 이벤트 경로를 찾을 수 없음: {event_path}")
-        return
+    # target이 폴더인지 파일인지 판별
+    target_path = Path(target)
+    
+    if target_path.is_dir():
+        # 기존 방식: 폴더 안의 모든 jpg 전송
+        image_files = sorted(list(target_path.glob("*.jpg")))
+    elif target_path.is_file():
+        # 단일 파일 전송
+        image_files = [target_path]
+    else:
+        # event_id로 스냅샷 폴더 찾기
+        event_path = SNAPSHOT_DIR / target
+        if not event_path.exists():
+            print(f"❌ [DataTransfer] 경로를 찾을 수 없음: {target}")
+            return
+        image_files = sorted(list(event_path.glob("*.jpg")))
 
-    image_files = sorted(list(event_path.glob("*.jpg")))
-    print(f"📦 [DataTransfer] {len(image_files)}개의 파일을 전송 준비 중 (Event: {event_id})")
+    print(f"📦 [DataTransfer] {len(image_files)}개의 파일을 전송 준비 중")
 
     while data_channel is None or data_channel.readyState != "open":
         await asyncio.sleep(0.1)
 
-    # 채널 안정화 대기
-    await asyncio.sleep(1.0)	
+    await asyncio.sleep(1.0)
 
     data_channel.send(json.dumps({
         "type": "transfer_start",
-        "event_id": event_id,
         "total_files": len(image_files)
     }))
 
@@ -114,7 +123,7 @@ async def start_transfer(event_id):
 
     data_channel.send(json.dumps({"type": "transfer_end"}))
     print("✅ [DataTransfer] 모든 파일 전송 완료.")
-    
+
     await asyncio.sleep(1)
     await pc.close()
     asyncio.get_event_loop().stop()
@@ -149,11 +158,11 @@ def on_offer_received(event, event_id):
 # ------------------------------------------------------------
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python webrtc_data_transfer.py <event_id>")
+        print("Usage: python webrtc_data_transfer.py <event_id_or_image_path>")
         sys.exit(1)
     
-    target_event_id = sys.argv[1]
-    print(f"🚀 [DataTransfer] 시작 - 대상 이벤트 ID: {target_event_id}")
+    target = sys.argv[1]
+    print(f"🚀 [DataTransfer] 시작 - 대상: {target}")
 
     main_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(main_loop)
@@ -163,7 +172,7 @@ if __name__ == "__main__":
     print("✅ [DataTransfer] Ready 신호 전송 완료")
 
     db.reference('signaling/smart_cctv/data_offer').listen(
-        lambda e: on_offer_received(e, target_event_id)
+        lambda e: on_offer_received(e, target)
     )
 
     try:
