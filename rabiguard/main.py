@@ -194,6 +194,8 @@ def vlm_worker_thread(collection_name="vlm_events"):
     """
     ZoneManager에서 전달한 이벤트 이미지를 받아
     VLM 분석 → 영어 결과 정리 → 한국어 번역 → Firestore 저장까지 수행합니다.
+
+    VLM 생성 실패 시에도 fallback 문장을 사용하여 Firestore에 이벤트를 저장합니다.
     """
     print("🔵 [VLM Worker] 초기화 시작...")
 
@@ -242,9 +244,6 @@ def vlm_worker_thread(collection_name="vlm_events"):
                     f"zone_{zone_id}_track_{track_id}",
                 )
 
-                people_count = item.get("people_count", 1)
-                enter_threshold_sec = item.get("enter_threshold_sec", 0)
-
                 # VLM 입력 이미지 전처리
                 vlm_img = cv2.resize(
                     context_img,
@@ -257,6 +256,8 @@ def vlm_worker_thread(collection_name="vlm_events"):
 
                 vlm_img = vlm_img.astype(np.uint8)
 
+                # prompts.py의 SYSTEM_PROMPT, USER_PROMPT만 사용
+                # zone_id, depth, 체류시간 같은 메타정보는 VLM 프롬프트에 넣지 않음
                 prompt = [
                     {
                         "role": "system",
@@ -281,21 +282,39 @@ def vlm_worker_thread(collection_name="vlm_events"):
 
                 print(f"\n🔎 [VLM] Zone '{zone_id}' -> ID {track_id} 분석 중...")
 
-                response = vlm.generate_all(
-                    prompt=prompt,
-                    frames=[vlm_img],
-                    temperature=0.1,
-                    seed=42,
-                    max_generated_tokens=30,
-                )
+                status = "completed"
 
-                english_result = clean_response(response)
-                korean_result = translate_to_korean(english_result)
+                try:
+                    response = vlm.generate_all(
+                        prompt=prompt,
+                        frames=[vlm_img],
+                        temperature=0.1,
+                        seed=42,
+                        max_generated_tokens=30,
+                    )
+
+                    english_result = clean_response(response)
+
+                    if not english_result:
+                        raise ValueError("Empty VLM output")
+
+                    korean_result = translate_to_korean(english_result)
+
+                    if not korean_result:
+                        korean_result = "감시 구역에서 사람이 감지되었습니다."
+
+                except Exception as e:
+                    print(f"⚠️ [VLM Generate Error] {e}")
+
+                    english_result = "A person was detected in the monitored zone."
+                    korean_result = "감시 구역에서 사람이 감지되었습니다."
+                    status = "vlm_failed"
 
                 print("=" * 70)
                 print("🚨 [VLM 상황 요약 알림]")
                 print(f"Zone: {zone_id}")
                 print(f"객체 ID: {track_id}")
+                print(f"Status: {status}")
                 print(f"Depth: person={p_depth:.2f}m, zone={z_depth:.2f}m")
                 print(f"Image: {image_path}")
                 print(f"EN: {english_result}")
@@ -312,6 +331,7 @@ def vlm_worker_thread(collection_name="vlm_events"):
                         track_id=track_id,
                         person_depth=float(p_depth),
                         zone_depth=float(z_depth),
+                        status=status,
                     )
 
                     print(f"✅ [Firestore] 저장 완료. Document ID: {doc_id}")
