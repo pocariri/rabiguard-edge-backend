@@ -257,15 +257,6 @@ def vlm_worker_thread(collection_name="vlm_events"):
 
                 vlm_img = vlm_img.astype(np.uint8)
 
-                event_prompt = (
-                    f"{USER_PROMPT}\n\n"
-                    f"Context: A tracked person triggered zone '{zone_id}'. "
-                    f"The person stayed in the zone for at least {enter_threshold_sec:.1f} seconds. "
-                    f"Detected people count in the zone is {people_count}. "
-                    f"Person depth is {p_depth:.2f}m and zone depth is {z_depth:.2f}m. "
-                    f"Describe only visible facts in one short sentence."
-                )
-
                 prompt = [
                     {
                         "role": "system",
@@ -282,7 +273,7 @@ def vlm_worker_thread(collection_name="vlm_events"):
                             {"type": "image"},
                             {
                                 "type": "text",
-                                "text": event_prompt,
+                                "text": USER_PROMPT,
                             },
                         ],
                     },
