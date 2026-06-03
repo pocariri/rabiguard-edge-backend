@@ -88,7 +88,7 @@ try:
     from .prompts import SYSTEM_PROMPT, USER_PROMPT
     from .translator import translate_to_korean
     from .firebase_writer import save_vlm_result_to_firestore
-    from .vlm_postprocess import clean_vlm_caption
+    from .postprocess import clean_vlm_caption
 
 except ImportError:
     from config import zone_config_queue, vlm_queue, stop_event, MODEL_PATH
@@ -97,7 +97,7 @@ except ImportError:
     from prompts import SYSTEM_PROMPT, USER_PROMPT
     from translator import translate_to_korean
     from firebase_writer import save_vlm_result_to_firestore
-    from vlm_postprocess import clean_vlm_caption
+    from postprocess import clean_vlm_caption
 
 
 # ------------------------------------------------------------
