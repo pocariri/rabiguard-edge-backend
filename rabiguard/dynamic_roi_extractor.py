@@ -15,7 +15,6 @@ try:
     from .config import (
         YOLOE_MODEL_PATH,
         TARGET_OBJECTS_PATH,
-        ZONES_CONFIG_PATH,
         EXTRACTED_ROIS_DIR,
     )
     from .firebase_writer import save_zones_to_firestore
@@ -23,7 +22,6 @@ except (ImportError, ValueError):
     from config import (
         YOLOE_MODEL_PATH,
         TARGET_OBJECTS_PATH,
-        ZONES_CONFIG_PATH,
         EXTRACTED_ROIS_DIR,
     )
     from firebase_writer import save_zones_to_firestore
@@ -72,6 +70,21 @@ class DynamicROIExtractor:
         print(f"📋 [ROI Extractor] {len(tags)}개의 타겟 객체 로드 완료")
         return tags
 
+    def bbox_to_rect_points(self, x1, y1, x2, y2):
+        """
+        bbox 좌표를 zone_manager가 기존 polygon처럼 사용할 수 있는
+        사각형 꼭짓점 4개로 변환합니다.
+
+        순서:
+        좌상단 -> 우상단 -> 우하단 -> 좌하단
+        """
+        return [
+            [int(x1), int(y1)],
+            [int(x2), int(y1)],
+            [int(x2), int(y2)],
+            [int(x1), int(y2)],
+        ]
+
     def extract_candidates(self, frame):
         """프레임에서 target_objects에 포함된 ROI 후보만 추출합니다."""
         frame_resized = cv2.resize(frame, self.target_size)
@@ -79,10 +92,9 @@ class DynamicROIExtractor:
 
         candidates = []
 
-        if not results or results[0].masks is None:
+        if not results or results[0].boxes is None:
             return candidates
 
-        masks = results[0].masks
         boxes = results[0].boxes
         names = self.model.names
 
@@ -94,20 +106,19 @@ class DynamicROIExtractor:
             if class_name not in self.target_objects:
                 continue
 
-            polygon = masks.xy[i].astype(np.int32)
-            epsilon = 0.01 * cv2.arcLength(polygon, True)
-            approx_polygon = cv2.approxPolyDP(polygon, epsilon, True).reshape(-1, 2)
-
-            # 크롭 및 이미지 처리
-            mask = np.zeros(self.target_size[::-1], dtype=np.uint8)
-            cv2.fillPoly(mask, [polygon], 255)
-
-            bgra = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2BGRA)
-            bgra[:, :, 3] = mask
-
             x1, y1, x2, y2 = map(int, boxes.xyxy[i].cpu().numpy())
 
-            crop_img = bgra[
+            # 좌표가 이미지 범위를 벗어나지 않게 보정
+            x1 = max(0, min(639, x1))
+            y1 = max(0, min(479, y1))
+            x2 = max(0, min(639, x2))
+            y2 = max(0, min(479, y2))
+
+            # bbox를 사각형 polygon 좌표로 변환
+            rect_points = self.bbox_to_rect_points(x1, y1, x2, y2)
+
+            # bbox crop 저장용 이미지
+            crop_img = frame_resized[
                 max(0, y1 - 10):min(480, y2 + 10),
                 max(0, x1 - 10):min(640, x2 + 10),
             ].copy()
@@ -118,9 +129,10 @@ class DynamicROIExtractor:
                 {
                     "id": obj_id,
                     "class_name": class_name,
-                    "points": approx_polygon.tolist(),
+                    "points": rect_points,          # 기존 polygon 필드에 들어갈 사각형 꼭짓점
                     "crop": crop_img,
-                    "bbox": [x1, y1, x2, y2],
+                    "bbox": [x1, y1, x2, y2],      # 앱/UI/추후 bbox mode용
+                    "mode": "bbox",
                 }
             )
 
@@ -146,7 +158,7 @@ class DynamicROIExtractor:
     def save_detected_result_image(self, frame, candidates, save_path=None):
         """
         SSH/headless 환경에서 확인할 수 있도록
-        원본 프레임 위에 bbox, polygon, 객체명을 표시한 이미지를 저장합니다.
+        원본 프레임 위에 bbox와 객체명을 표시한 이미지를 저장합니다.
         """
         if save_path is None:
             save_path = EXTRACTED_ROIS_DIR / "detected_result.jpg"
@@ -160,9 +172,8 @@ class DynamicROIExtractor:
         for cand in candidates:
             class_name = cand["class_name"]
             x1, y1, x2, y2 = cand["bbox"]
-            points = np.array(cand["points"], dtype=np.int32)
 
-            # 바운딩 박스 표시
+            # bbox 자동구역 표시
             cv2.rectangle(
                 display,
                 (x1, y1),
@@ -171,16 +182,7 @@ class DynamicROIExtractor:
                 2,
             )
 
-            # polygon ROI 영역 표시
-            cv2.polylines(
-                display,
-                [points],
-                isClosed=True,
-                color=(255, 0, 0),
-                thickness=2,
-            )
-
-            label = class_name
+            label = f"{class_name}"
 
             text_size, _ = cv2.getTextSize(
                 label,
@@ -216,27 +218,6 @@ class DynamicROIExtractor:
         cv2.imwrite(str(save_path), display)
         print(f"🖼️ [ROI Extractor] 인식 결과 이미지 저장 완료: {save_path}")
 
-    def save_to_config(self, candidates, config_path=None):
-        """추출된 후보들을 zones_config.json 형식으로 저장합니다."""
-        if config_path is None:
-            config_path = ZONES_CONFIG_PATH
-
-        config = {}
-
-        for cand in candidates:
-            config[cand["id"]] = {
-                "polygon": cand["points"],
-                "enter_threshold_sec": 2.0,
-                "min_people": 1,
-                "is_active": True,
-                "class_name": cand["class_name"],
-            }
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
-
-        print(f"💾 [ROI Extractor] {len(candidates)}개의 구역을 '{config_path}'에 저장했습니다.")
-
     def save_to_firebase(
         self,
         candidates,
@@ -263,6 +244,7 @@ class DynamicROIExtractor:
             ]
 
             zones_data[cand["id"]] = {
+                "mode": "bbox",
                 "polygon": polygon_dicts,
                 "enter_threshold_sec": 2.0,
                 "min_people": 1,
@@ -319,9 +301,6 @@ if __name__ == "__main__":
                 collection_name="auto_zones",
                 reset_before_save=True,
             )
-
-            # 5. 로컬 JSON 백업 저장
-            extractor.save_to_config(rois)
 
         else:
             print(f"⚠️ [ROI Extractor] 타겟 목록({extractor.target_objects})에 해당하는 객체를 찾지 못했습니다.")
