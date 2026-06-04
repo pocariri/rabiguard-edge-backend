@@ -6,7 +6,6 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-import uuid
 
 try:
     from .config import DEPTH_SIMILARITY_THRESHOLD, SAVE_DIR, vlm_queue
@@ -261,7 +260,7 @@ class ZoneManager:
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 # 고유 이벤트 ID 생성
-                event_id = f"{timestamp}_{uuid.uuid4().hex[:6]}"
+                event_id = f"{timestamp}_track_{t_id}"
 
                 print(
                     f"✅ [{zone_id}] ID {t_id} 조건 충족! EventID: {event_id}"

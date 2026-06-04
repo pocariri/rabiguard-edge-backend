@@ -91,7 +91,7 @@ def save_vlm_result_to_firestore(
         "status": status,
     }
 
-    event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S')}_track_{track_id}"
+    event_doc_id = event_id
 
     event_doc_ref = zone_doc_ref.collection("events").document(event_doc_id)
     event_doc_ref.set(event_data)
