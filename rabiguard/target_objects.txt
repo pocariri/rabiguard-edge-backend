@@ -1,54 +1,440 @@
-air conditioner
-air conditioning
+Golden Gate Bridge
+aircraft cabin
+airplane window
+aisle
+alcove
+apartment
+arch
+arch bridge
+archaelogical excavation
+archery
+archipelago
+architect
+architecture
+archive
+archway
 armchair
-atm
-audio
-auto mechanic
-baby carriage
+armoire
+art studio
+atrium
+atv
+auditorium
+auto factory
+auto showroom
+baby shower
+balcony
+balloon arch
+ballroom
+banquet hall
+bar
+bar code
+bar stool
+barbecue
 barbecue grill
-bath
+barbell
+barber
+barber shop
+barbie
+barge
+barista
+bark
+barley
+barn
+barn door
+barn owl
+barrel
+barricade
+barrier
+bartender
+basement
 bathroom
+bathroom accessory
+bathroom cabinet
 bathroom door
+bathroom mirror
+bathroom sink
 bathroom window
+bay window
+beach chair
+beach house
 bean bag chair
-beanbag
 bed
+bed frame
+bedcover
+bedding
+bedpan
+bedroom
+bedroom window
+bedside lamp
+beer hall
+bench
 billiard table
-blackboard
+bird house
+bishop
+boat house
+bookcase
+bookshelf
+bookstore
+boutique hotel
+bow window
+broom
+bucket cabinet
+buffet
+bulletproof vest
+bunk bed
+bus window
+butchers shop
+butterfly house
+cabin
+cabin car
 cabinet
+cabinetry
+cafe
+candy bar
+candy store
+canopy bed
+canteen
+car door
+car window
+cat bed
+caterpillar
+ceiling
+ceiling fan
 chair
+chairlift
 changing table
+childs room
+chimney
+chocolate bar
+church bench
+city hall
+city nightview
+city wall
+classroom
+clean room
+clinic
 closet
+clothing store
 cocktail table
-container
+coffee shop
+computer chair
+computer desk
+computer monitor
+computer room
+computer screen
+concert hall
+conference hall
 convenience store
+corridor
+cottage
 couch
-counter
+country house
+courthouse
+crossbar
+crowbar
+crt screen
+dance floor
+dance room
+day bed
+daybed
+department store
+desktop
+desktop computer
+dining room
 dinning table
 display window
+dog bed
+dog house
+dollhouse
 door
+door handle
+doormat
+doorplate
+doorway
+dresser
+dressing room
+electric chair
+elevator
+elevator car
+elevator door
+elevator lobby
+elevator shaft
+engine room
+entrance
+entrance hall
+escalator
+exit
+fabric store
 factory
+factory workshop
+family room
+farmhouse
+fastfood restaurant
+feeding chair
 fence
-forklift
+file cabinet
+fireplace
+fishing village
+floor
+floor fan
+floor mat
+floor plan
+floor window
+flower bed
+folding chair
+forest floor
+fridge
+fruits shop
+garage
+garage door
+garage kit
+gas stove
+general store
+gift shop
+gingerbread house
+glass door
+glass floor
+glass house
 glass table
-heater
+glass wall
+glass window
+grasshopper
+groom
+guest house
+guest room
+gym
+gymnast
+hall
+halloween
+halloween costume
+halloween pumpkin
+hallway
+hand dryer
+hardware store
+hardwood floor
+headboard
+high bar
+home office
+hospital
+hospital bed
+hospital room
+hotel
+hotel lobby
+hotel room
+house
+house exterior
+house finch
+houseplant
+ice shelf
+indoor
+indoor rower
+infant bed
+inflatable boat
+information desk
+jewelry shop
+kindergarden classroom
+kitchen
+kitchen cabinet
+kitchen counter
+kitchen floor
+kitchen hood
+kitchen island
+kitchen knife
+kitchen sink
 kitchen table
-machine
+kitchen utensil
+kitchen window
+kitchenware
+ktv
+lake house
+laundry
+laundry basket
+laundry room
+lecture hall
+lecture room
+library
+lighthouse
+liquor store
+living room
+living space
+log cabin
+loveseat
+mall
+mallard
+mallard duck
+mallet
+manor house
+march
+marching band
+martial arts gym
+medicine cabinet
+meeting room
+monarch
+monitor
+mountain village
+mushroom
+music stool
+music studio
+nightstand
+oast house
+office
+office building
+office chair
+office cubicle
+office desk
+office supply
+office window
+officer
+opera house
+operating room
+optical shop
+outdoor
+outhouse
+oven
+paisley bandanna
+pantry
+parchment
+park bench
+parking garage
+pet shop
+pet store
+piano
 picnic table
-playground
+pillar
+playhouse
+playroom
 poker table
+portable battery
+post office
+press room
+projection screen
+recording studio
+recreation room
+repair shop
+research
+researcher
+restaurant
+restaurant kitchen
+restaurant patio
+restroom
+riverbed
+rock arch
+rocking chair
+roof
+roof garden
+room
+room divider
 round table
-school bus
+sand bar
+schoolhouse
+screen
+screen door
+screenshot
+seabed
+seawall
+server room
 shelf
+shoe shop
+shop window
+shopfront
+shopper
+shopping
+shopping bag
+shopping basket
+shopping cart
+shopping street
 shower
+shower cap
+shower curtain
+shower door
+shower head
+side cabinet
 side table
 sink
+stable
 stairs
+step stool
+stone house
+stool
+storage room
+store
+storefront
+stove
+studio
+studio shot
+supermarket shelf
+sushi bar
+swallow
+swallowtail butterfly
+swivel chair
 table
-table
+table lamp
+table tennis
+table tennis racket
 table tennis table
+table top
+tablecloth
+tablet
+tablet computer
 tableware
-truck
+television
+television camera
+television room
+television studio
+terrace
+theatre actor
+throne room
+tile flooring
+tile roof
+tile wall
+toilet bowl
+toilet paper
+toilet seat
+toiletry
+towel bar
+toyshop
+train window
+training bench
+tree house
+tv actor
+tv cabinet
+tv drama
+tv genre
+tv personality
+tv show
+tv sitcom
+tv tower
+utility room
+vegetable
+vegetable garden
+vegetable market
+veterinarians office
+villa
+village
+waiting hall
+waiting room
+wall
+wall clock
+wall lamp
+wallpaper
 warehouse
-whiteboard
+washing machine
+waterproof jacket
+western restaurant
+wet bar
+wheelchair
+white house
 window
+window box
+window display
+window frame
+window screen
+window seat
+window sill
+wine cabinet
+wood floor
+wood wall
+wood-burning stove
+workbench
+workshop
+writing desk

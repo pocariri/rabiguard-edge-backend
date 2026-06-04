@@ -53,28 +53,34 @@ def on_zone_snapshot(col_snapshot, changes, read_time):
             print(f"⚠️ [Firestore Listener Change Error] {e}")
 
 
-def start_firestore_listener(collection_name="zones"):
+def start_firestore_listener():
     """
-    Firestore zones 컬렉션을 실시간 감시합니다.
+    manual_zones와 auto_zones 컬렉션을 동시에 실시간 감시합니다.
     """
-    print("🔵 [Firestore Listener] 초기화 시작...")
+    manual_col = "manual_zones"
+    auto_col = "auto_zones"
+    
+    print(f"🔵 [Firestore Listener] '{manual_col}' 및 '{auto_col}' 감시 시작...")
 
     try:
         db = init_firestore()
 
-        query_watch = db.collection(collection_name).on_snapshot(on_zone_snapshot)
+        # 두 컬렉션에 대해 각각 리스너 등록
+        manual_watch = db.collection(manual_col).on_snapshot(on_zone_snapshot)
+        auto_watch = db.collection(auto_col).on_snapshot(on_zone_snapshot)
 
-        print(f"✅ [Firestore Listener] '{collection_name}' 컬렉션 감시 시작")
+        print(f"✅ [Firestore Listener] 두 컬렉션 모두 감시 중")
 
         while not stop_event.is_set():
             time.sleep(0.5)
 
         try:
-            query_watch.unsubscribe()
-            print("🔴 [Firestore Listener] 감시 종료")
+            manual_watch.unsubscribe()
+            auto_watch.unsubscribe()
+            print("🔴 [Firestore Listener] 모든 감시 종료")
         except Exception as e:
             print(f"⚠️ [Firestore Listener unsubscribe warning] {e}")
 
     except Exception as e:
         print(f"⚠️ [Firestore Listener Error] {e}")
-        print("⚠️ Firestore listener 없이 기본 Zone_A1 구역으로만 실행됩니다.")
+        print("⚠️ Firestore listener 없이 작동 중일 수 있습니다.")

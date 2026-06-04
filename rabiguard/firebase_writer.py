@@ -58,12 +58,17 @@ def save_vlm_result_to_firestore(
     person_depth: float | None = None,
     zone_depth: float | None = None,
     event_id: str = "",
+    status: str = "completed",
 ):
     """
     VLM 분석 결과를 Firestore에 저장합니다.
 
     저장 구조:
     vlm_events/{zone_id}/events/{event_doc_id}
+    
+    status:
+    - completed: VLM 분석 및 번역까지 정상 완료
+    - vlm_failed: 사람 감지는 되었지만 VLM 분석 실패, fallback 문장 저장
     """
     db = init_firestore()
 
@@ -83,6 +88,7 @@ def save_vlm_result_to_firestore(
         "track_id": track_id,
         "person_depth": person_depth,
         "zone_depth": zone_depth,
+        "status": status,
     }
 
     event_doc_id = f"{now.strftime('%Y%m%d_%H%M%S')}_track_{track_id}"

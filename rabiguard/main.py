@@ -158,6 +158,29 @@ except ImportError as e:
     sys.exit(1)
 
 # ------------------------------------------------------------
+# Local modules
+# ------------------------------------------------------------
+
+try:
+    from .config import zone_config_queue, vlm_queue, stop_event, MODEL_PATH
+    from .zone_manager import ZoneManager
+    from .firestore_listener import start_firestore_listener
+    from .prompts import SYSTEM_PROMPT, USER_PROMPT
+    from .translator import translate_to_korean
+    from .firebase_writer import save_vlm_result_to_firestore
+    from .postprocess import clean_vlm_caption
+
+except ImportError:
+    from config import zone_config_queue, vlm_queue, stop_event, MODEL_PATH
+    from zone_manager import ZoneManager
+    from firestore_listener import start_firestore_listener
+    from prompts import SYSTEM_PROMPT, USER_PROMPT
+    from translator import translate_to_korean
+    from firebase_writer import save_vlm_result_to_firestore
+    from postprocess import clean_vlm_caption
+
+
+# ------------------------------------------------------------
 # GStreamer caps compatibility fix
 # ------------------------------------------------------------
 
@@ -224,6 +247,15 @@ def clean_response(response: str) -> str:
 # ------------------------------------------------------------
 
 def vlm_worker_thread(collection_name="vlm_events"):
+<<<<<<< HEAD
+=======
+    """
+    ZoneManager에서 전달한 이벤트 이미지를 받아
+    VLM 분석 → 영어 결과 정리 → 한국어 번역 → Firestore 저장까지 수행합니다.
+
+    VLM 생성 실패 시에도 fallback 문장을 사용하여 Firestore에 이벤트를 저장합니다.
+    """
+>>>>>>> 0c13580ee990fd29dc20b197b779bdde9c0dcee0
     print("🔵 [VLM Worker] 초기화 시작...")
 
     hef_path = resolve_hef_path(
@@ -263,47 +295,97 @@ def vlm_worker_thread(collection_name="vlm_events"):
                 p_depth = item["p_depth"]
                 z_depth = item["z_depth"]
                 zone_id = item["zone_id"]
+<<<<<<< HEAD
                 image_path = item.get("image_path", f"zone_{zone_id}_track_{track_id}")
                 people_count = item.get("people_count", 1)
                 enter_threshold_sec = item.get("enter_threshold_sec", 0)
                 event_id = item.get("event_id", "")
 
                 vlm_img = cv2.resize(context_img, (336, 336), interpolation=cv2.INTER_LINEAR)
+=======
+
+                image_path = item.get(
+                    "image_path",
+                    f"zone_{zone_id}_track_{track_id}",
+                )
+
+                # VLM 입력 이미지 전처리
+                vlm_img = cv2.resize(
+                    context_img,
+                    (336, 336),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+
+>>>>>>> 0c13580ee990fd29dc20b197b779bdde9c0dcee0
                 if len(vlm_img.shape) == 3 and vlm_img.shape[2] == 3:
                     vlm_img = cv2.cvtColor(vlm_img, cv2.COLOR_BGR2RGB)
                 vlm_img = vlm_img.astype(np.uint8)
 
-                event_prompt = (
-                    f"{USER_PROMPT}\n\n"
-                    f"Context: A tracked person triggered zone '{zone_id}'. "
-                    f"The person stayed in the zone for at least {enter_threshold_sec:.1f} seconds. "
-                    f"Detected people count in the zone is {people_count}. "
-                    f"Person depth is {p_depth:.2f}m and zone depth is {z_depth:.2f}m. "
-                    f"Describe only visible facts in one short sentence."
-                )
-
+                # prompts.py의 SYSTEM_PROMPT, USER_PROMPT만 사용
+                # zone_id, depth, 체류시간 같은 메타정보는 VLM 프롬프트에 넣지 않음
                 prompt = [
+<<<<<<< HEAD
                     {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
                     {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": event_prompt}]},
+=======
+                    {
+                        "role": "system",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": SYSTEM_PROMPT,
+                            }
+                        ],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image"},
+                            {
+                                "type": "text",
+                                "text": USER_PROMPT,
+                            },
+                        ],
+                    },
+>>>>>>> 0c13580ee990fd29dc20b197b779bdde9c0dcee0
                 ]
 
                 print(f"\n🔎 [VLM] Zone '{zone_id}' -> ID {track_id} 분석 중...")
 
-                response = vlm.generate_all(
-                    prompt=prompt,
-                    frames=[vlm_img],
-                    temperature=0.1,
-                    seed=42,
-                    max_generated_tokens=30,
-                )
+                status = "completed"
 
-                english_result = clean_response(response)
-                korean_result = translate_to_korean(english_result)
+                try:
+                    response = vlm.generate_all(
+                        prompt=prompt,
+                        frames=[vlm_img],
+                        temperature=0.1,
+                        seed=42,
+                        max_generated_tokens=30,
+                    )
+
+                    english_result = clean_response(response)
+                    english_result = clean_vlm_caption(english_result)
+
+                    if not english_result:
+                        raise ValueError("Empty VLM output")
+
+                    korean_result = translate_to_korean(english_result)
+
+                    if not korean_result:
+                        korean_result = "감시 구역에서 사람이 감지되었습니다."
+
+                except Exception as e:
+                    print(f"⚠️ [VLM Generate Error] {e}")
+
+                    english_result = "A person was detected in the monitored zone."
+                    korean_result = "감시 구역에서 사람이 감지되었습니다."
+                    status = "vlm_failed"
 
                 print("=" * 70)
                 print("🚨 [VLM 상황 요약 알림]")
                 print(f"Zone: {zone_id}")
                 print(f"객체 ID: {track_id}")
+                print(f"Status: {status}")
                 print(f"Depth: person={p_depth:.2f}m, zone={z_depth:.2f}m")
                 print(f"Image: {image_path}")
                 print(f"EN: {english_result}")
@@ -320,7 +402,11 @@ def vlm_worker_thread(collection_name="vlm_events"):
                         track_id=track_id,
                         person_depth=float(p_depth),
                         zone_depth=float(z_depth),
+<<<<<<< HEAD
                         event_id=event_id,
+=======
+                        status=status,
+>>>>>>> 0c13580ee990fd29dc20b197b779bdde9c0dcee0
                     )
                     print(f"✅ [Firestore] 저장 완료. Document ID: {doc_id}")
 
@@ -383,6 +469,7 @@ class DynamicAppCallback(app_callback_class):
         last_yolo_time = time.time()
         yolo_count = 0
 
+<<<<<<< HEAD
         dummy_payload = {
             "action": "update",
             "zone_id": "Zone_A1",
@@ -394,6 +481,25 @@ class DynamicAppCallback(app_callback_class):
             },
         }
         zone_config_queue.put(dummy_payload)
+=======
+        # 개발/테스트용 기본 구역 주석 처리 (Firestore 데이터만 사용)
+        # dummy_payload = {
+        #     "action": "update",
+        #     "zone_id": "Zone_A1",
+        #     "data": {
+        #         "polygon": [
+        #             [100, 100],
+        #             [540, 100],
+        #             [540, 380],
+        #             [100, 380],
+        #         ],
+        #         "enter_threshold_sec": 2.0,
+        #         "min_people": 1,
+        #         "is_active": True,
+        #     },
+        # }
+        # zone_config_queue.put(dummy_payload)
+>>>>>>> 0c13580ee990fd29dc20b197b779bdde9c0dcee0
 
         while not stop_event.is_set():
             self.yolo_ready = True
