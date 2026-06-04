@@ -85,6 +85,61 @@ class DynamicROIExtractor:
             [int(x1), int(y2)],
         ]
 
+    def calculate_iou(self, box1, box2):
+        """두 bbox 간의 IoU(Intersection over Union)를 계산합니다."""
+        x1_1, y1_1, x2_1, y2_1 = box1
+        x1_2, y1_2, x2_2, y2_2 = box2
+
+        # 교차 영역 좌표 계산
+        xi1 = max(x1_1, x1_2)
+        yi1 = max(y1_1, y1_2)
+        xi2 = min(x2_1, x2_2)
+        yi2 = min(y2_1, y2_2)
+
+        # 교차 영역 면적
+        inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+
+        # 각 bbox 면적
+        box1_area = (x2_1 - x1_1) * (y2_1 - y1_1)
+        box2_area = (x2_2 - x1_2) * (y2_2 - y1_2)
+
+        # Union 면적 (합집합)
+        union_area = box1_area + box2_area - inter_area
+
+        if union_area == 0:
+            return 0
+        return inter_area / union_area
+
+    def filter_candidates(self, candidates, iou_threshold=0.4):
+        """
+        면적이 큰 순서대로 정렬한 후, 겹치는 구역을 제거합니다.
+        (Greedy Non-Maximum Suppression 변형)
+        """
+        if not candidates:
+            return []
+
+        # 1. 면적(Area) 기준으로 내림차순 정렬 (큰 것부터)
+        candidates.sort(
+            key=lambda x: (x["bbox"][2] - x["bbox"][0]) * (x["bbox"][3] - x["bbox"][1]),
+            reverse=True
+        )
+
+        final_rois = []
+        for cand in candidates:
+            keep = True
+            for accepted in final_rois:
+                # 2. 이미 선택된 구역(더 큰 구역)과 겹치는지 확인
+                iou = self.calculate_iou(cand["bbox"], accepted["bbox"])
+                if iou > iou_threshold:
+                    print(f"🚫 [ROI Extractor] {cand['id']} 제거됨 (겹침 비율: {iou:.2f} with {accepted['id']})")
+                    keep = False
+                    break
+            
+            if keep:
+                final_rois.append(cand)
+        
+        return final_rois
+
     def extract_candidates(self, frame):
         """프레임에서 target_objects에 포함된 ROI 후보만 추출합니다."""
         frame_resized = cv2.resize(frame, self.target_size)
@@ -136,7 +191,11 @@ class DynamicROIExtractor:
                 }
             )
 
-        return candidates
+        # 겹침 및 크기 기반 필터링 적용 (면적 순 정렬 + IoU 기반 중복 제거)
+        filtered_candidates = self.filter_candidates(candidates)
+        print(f"🎯 [ROI Extractor] 필터링 결과: {len(candidates)} -> {len(filtered_candidates)}개")
+
+        return filtered_candidates
 
     def save_original_image(self, frame, save_path=None):
         """
