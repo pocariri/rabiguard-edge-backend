@@ -405,25 +405,23 @@ class DynamicAppCallback(app_callback_class):
         last_yolo_time = time.time()
         yolo_count = 0
 
-        # 개발/테스트용 기본 구역.
-        # Firestore에서 zone을 내려받으면 동적으로 갱신됩니다.
-        dummy_payload = {
-            "action": "update",
-            "zone_id": "Zone_A1",
-            "data": {
-                "polygon": [
-                    [100, 100],
-                    [540, 100],
-                    [540, 380],
-                    [100, 380],
-                ],
-                "enter_threshold_sec": 2.0,
-                "min_people": 1,
-                "is_active": True,
-            },
-        }
-
-        zone_config_queue.put(dummy_payload)
+        # 개발/테스트용 기본 구역 주석 처리 (Firestore 데이터만 사용)
+        # dummy_payload = {
+        #     "action": "update",
+        #     "zone_id": "Zone_A1",
+        #     "data": {
+        #         "polygon": [
+        #             [100, 100],
+        #             [540, 100],
+        #             [540, 380],
+        #             [100, 380],
+        #         ],
+        #         "enter_threshold_sec": 2.0,
+        #         "min_people": 1,
+        #         "is_active": True,
+        #     },
+        # }
+        # zone_config_queue.put(dummy_payload)
 
         while not stop_event.is_set():
             self.yolo_ready = True
