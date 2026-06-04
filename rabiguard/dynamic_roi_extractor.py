@@ -5,6 +5,7 @@ import json
 import numpy as np
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # 직접 실행 시 상위 패키지 인식을 위한 경로 추가
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -152,6 +153,8 @@ class DynamicROIExtractor:
 
         boxes = results[0].boxes
         names = self.model.names
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         for i in range(len(boxes)):
             cls_id = int(boxes.cls[i].item())
@@ -178,7 +181,7 @@ class DynamicROIExtractor:
                 max(0, x1 - 10):min(640, x2 + 10),
             ].copy()
 
-            obj_id = f"{class_name}_{i}"
+            obj_id = f"{timestamp}_{class_name}_{i}"
 
             candidates.append(
                 {
