@@ -77,11 +77,18 @@ async def create_answer(offer_sdp):
 
 def on_offer_received(event):
     print(f"[WebRTC] 이벤트 수신: {event.data}")
-    if event.data and isinstance(event.data, dict):
-        offer_sdp = event.data.get('sdp')
-        if offer_sdp:
-            print("\n[감지] 새로운 Offer 수신")
-            asyncio.run_coroutine_threadsafe(create_answer(offer_sdp), main_loop)
+    if not event.data:
+        print("[WebRTC] 데이터 없음 (삭제 이벤트), 무시")
+        return
+    if not isinstance(event.data, dict):
+        print("[WebRTC] 딕셔너리 아님, 무시")
+        return
+    offer_sdp = event.data.get('sdp')
+    if not offer_sdp:
+        print("[WebRTC] SDP 없음, 무시")
+        return
+    print("\n[감지] 새로운 Offer 수신")
+    asyncio.run_coroutine_threadsafe(create_answer(offer_sdp), main_loop)
 
 # 메인 실행부
 print("WebRTC 시그널링 대기 중... (Ctrl+C로 종료)")
@@ -94,6 +101,10 @@ asyncio.set_event_loop(main_loop)
 db.reference('signaling/smart_cctv/offer').delete()
 db.reference('signaling/smart_cctv/answer').delete()
 print("[WebRTC] 기존 signaling 데이터 초기화 완료")
+
+# 잠깐 대기 (삭제 이벤트 전파 완료 대기)
+import time
+time.sleep(0.5)
 
 # 3. 리스너 등록
 db.reference('signaling/smart_cctv/offer').listen(on_offer_received)
