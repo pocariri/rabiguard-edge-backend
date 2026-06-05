@@ -108,7 +108,7 @@ class Zone:
         else:
             self.polygon = np.array([])
 
-        self.enter_threshold_sec = float(data.get("enter_threshold_sec", 2.0))
+        self.enter_threshold_sec = float(data.get("enter_threshold_sec", 30.0))
         self.min_people = int(data.get("min_people", 1))
         self.is_active = bool(data.get("is_active", True))
 
