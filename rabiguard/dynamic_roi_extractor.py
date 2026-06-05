@@ -308,7 +308,7 @@ class DynamicROIExtractor:
             zones_data[cand["id"]] = {
                 "mode": "bbox",
                 "polygon": polygon_dicts,
-                "enter_threshold_sec": 2.0,
+                "enter_threshold_sec": 20.0,
                 "min_people": 1,
                 "is_active": True,
                 "class_name": cand["class_name"],
