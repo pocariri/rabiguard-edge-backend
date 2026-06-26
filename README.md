@@ -1,3 +1,10 @@
+### Forked Repository Notice
+본 저장소는 팀 프로젝트 당시 **[backend]** 파트 팀원의 작업물이며 전체 프로젝트 코드 참고 및 보존을 위해 Fork해 온 저장소입니다.
+
+**저의 주 작업물은 아래 저장소에서 확인하실 수 있습니다.**
+
+[capstone-rafour/frontend](https://github.com/Capstone-Rafour/rabiguard-mobile-app)
+
 # Capstone Design (2026-1) - Rafour
 
 라즈베리파이 5와 Hailo-10H NPU를 활용한 지능형 홈 케어 시스템입니다.
